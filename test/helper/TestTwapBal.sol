@@ -1,0 +1,131 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.22;
+
+import "forge-std/console2.sol";
+
+import {Test} from "forge-std/Test.sol";
+import {Sort} from "./Sort.sol";
+import {Constants} from "./Constants.sol";
+import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {ERC20Mock} from "./ERC20Mock.sol";
+
+/// balancer V3 imports
+import {
+    TokenConfig,
+    TokenType,
+    PoolRoleAccounts,
+    LiquidityManagement,
+    AddLiquidityKind,
+    RemoveLiquidityKind,
+    AddLiquidityParams,
+    RemoveLiquidityParams
+} from "lib/balancer-v3-monorepo/pkg/interfaces/contracts/vault/VaultTypes.sol";
+// import {IVault} from "lib/balancer-v3-monorepo/pkg/interfaces/contracts/vault/IVault.sol";
+import {Vault} from "lib/balancer-v3-monorepo/pkg/vault/contracts/Vault.sol";
+import {StablePoolFactory} from
+    "lib/balancer-v3-monorepo/pkg/pool-stable/contracts/StablePoolFactory.sol";
+import {IRateProvider} from
+    "lib/balancer-v3-monorepo/pkg/interfaces/contracts/solidity-utils/helpers/IRateProvider.sol";
+import {TRouter} from "./TRouter.sol";
+import {IVaultExplorer} from
+    "lib/balancer-v3-monorepo/pkg/interfaces/contracts/vault/IVaultExplorer.sol";
+
+contract TestTwapBal is Test, Sort, Constants {
+    uint32 aEid = 1;
+    uint32 bEid = 2;
+
+    uint128 public constant DEFAULT_CAPACITY = 100_000_000e18;
+    uint128 public constant INITIAL_CDXUSD_AMT = 10_000_000e18;
+    uint128 public constant INITIAL_USDT_AMT = 10_000_000e6;
+    uint128 public constant INITIAL_USDC_AMT = 10_000_000e6;
+
+    uint128 public constant INITIAL_ETH_MINT = 1000 ether;
+
+    address public userA = address(0x1);
+    address public userB = address(0x2);
+    address public userC = address(0x3);
+    address public owner = address(this);
+    address public guardian = address(0x4);
+    address public treasury = address(0x5);
+
+    IERC20 public usdc;
+    IERC20 public usdt;
+
+    uint256 public forkIdEth;
+    uint256 public forkIdPolygon;
+
+    function setUp() public virtual {
+
+        string memory MAINNET_RPC_URL = vm.envString("MAINNET_RPC_URL");
+        forkIdEth = vm.createFork(MAINNET_RPC_URL);
+
+        vm.deal(userA, INITIAL_ETH_MINT);
+        vm.deal(userB, INITIAL_ETH_MINT);
+        vm.deal(userC, INITIAL_ETH_MINT);
+
+        usdc = IERC20(address(new ERC20Mock{salt: "1"}(6)));
+        usdt = IERC20(address(new ERC20Mock{salt: "2"}(6)));
+
+        /// initial mint
+        ERC20Mock(address(usdc)).mint(userA, INITIAL_USDC_AMT);
+        ERC20Mock(address(usdt)).mint(userA, INITIAL_USDT_AMT);
+
+        ERC20Mock(address(usdc)).mint(userB, INITIAL_USDC_AMT);
+        ERC20Mock(address(usdt)).mint(userB, INITIAL_USDT_AMT);
+
+        ERC20Mock(address(usdc)).mint(userC, INITIAL_USDC_AMT);
+        ERC20Mock(address(usdt)).mint(userC, INITIAL_USDT_AMT);
+
+        ERC20Mock(address(usdc)).mint(userB, INITIAL_USDC_AMT);
+        ERC20Mock(address(usdt)).mint(userB, INITIAL_USDT_AMT);
+
+        // MAX approve "vault" by all users
+        for (uint160 i = 1; i <= 3; i++) {
+            vm.startPrank(address(i)); // address(0x1) == address(1)
+            usdc.approve(vaultV3, type(uint256).max);
+            usdt.approve(vaultV3, type(uint256).max);
+            vm.stopPrank();
+        }
+    }
+
+    function createStablePool(IERC20[] memory assets, uint256 amplificationParameter, address owner)
+        public
+        returns (address)
+    {
+        // sort tokens
+        IERC20[] memory tokens = new IERC20[](assets.length);
+
+        tokens = sort(assets);
+
+        TokenConfig[] memory tokenConfigs = new TokenConfig[](assets.length);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            tokenConfigs[i] = TokenConfig({
+                token: tokens[i],
+                tokenType: TokenType.STANDARD,
+                rateProvider: IRateProvider(address(0)),
+                paysYieldFees: false
+            });
+        }
+        PoolRoleAccounts memory roleAccounts;
+        roleAccounts.pauseManager = address(0);
+        roleAccounts.swapFeeManager = address(0);
+        roleAccounts.poolCreator = address(0);
+
+        address stablePool = address(
+            StablePoolFactory(address(stablePoolFactory)).create(
+                "Cod3x-USD-Pool",
+                "CUP",
+                tokenConfigs,
+                amplificationParameter, // test only
+                roleAccounts,
+                1e12, // 0.001% (in WAD)
+                address(0),
+                false,
+                false,
+                bytes32(keccak256(abi.encode(tokenConfigs, bytes("Cod3x-USD-Pool"), bytes("CUP"))))
+            )
+        );
+
+        return (address(stablePool));
+    }
+}
