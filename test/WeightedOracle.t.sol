@@ -1,21 +1,44 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {Counter} from "../contracts/Counter.sol";
 import {TestTwapBal} from "./helper/TestTwapBal.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {WeightedPool} from "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts/WeightedPool.sol";
 
 contract WeightedOracle is TestTwapBal {
-    Counter public counter;
+    WeightedPool public pool;
+    IERC20[] public assets;
 
     function setUp() public override {
         super.setUp();
-        counter = new Counter();
-        counter.setNumber(0);
+        vm.selectFork(forkIdEth);
+
+        IERC20[] memory assetsTemp = new IERC20[](2);
+        assetsTemp[0] = usdt;
+        assetsTemp[1] = usdc;
+
+        assets = sort(assetsTemp);
+
+        pool = WeightedPool(createWeightedPool(assets, address(0), address(this)));
+
+        uint256[] memory amountsToAdd = new uint256[](assets.length);
+        amountsToAdd[0] = 1_000_000e18;
+        amountsToAdd[1] = 1_000_000e18;
+
+        vm.prank(userA);
+        router.initialize(address(pool), assets, amountsToAdd);
+        vm.stopPrank();
     }
 
     function test_Increment() public {
-        counter.increment();
-        assertEq(counter.number(), 1);
+        assertNotEq(address(pool), address(0));
     }
-    
+
+    function test_easySwap() public {
+        uint256 amount = 1000000000000000000;
+        usdt.transfer(address(pool), amount);
+        usdt.approve(address(pool), amount);
+
+        router.swapExactTokensForTokens(amount, 0, assets, address(this));
+    }
 }

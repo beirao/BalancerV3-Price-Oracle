@@ -24,20 +24,18 @@ import {
 import {Vault} from "lib/balancer-v3-monorepo/pkg/vault/contracts/Vault.sol";
 import {StablePoolFactory} from
     "lib/balancer-v3-monorepo/pkg/pool-stable/contracts/StablePoolFactory.sol";
+import {WeightedPoolFactory} from
+    "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts/WeightedPoolFactory.sol";
 import {IRateProvider} from
     "lib/balancer-v3-monorepo/pkg/interfaces/contracts/solidity-utils/helpers/IRateProvider.sol";
 import {TRouter} from "./TRouter.sol";
 import {IVaultExplorer} from
     "lib/balancer-v3-monorepo/pkg/interfaces/contracts/vault/IVaultExplorer.sol";
+import {TRouter} from "./TRouter.sol";
 
 contract TestTwapBal is Test, Sort, Constants {
-    uint32 aEid = 1;
-    uint32 bEid = 2;
-
-    uint128 public constant DEFAULT_CAPACITY = 100_000_000e18;
-    uint128 public constant INITIAL_CDXUSD_AMT = 10_000_000e18;
-    uint128 public constant INITIAL_USDT_AMT = 10_000_000e6;
-    uint128 public constant INITIAL_USDC_AMT = 10_000_000e6;
+    uint128 public constant INITIAL_USDT_AMT = 10_000_000e18;
+    uint128 public constant INITIAL_USDC_AMT = 10_000_000e18;
 
     uint128 public constant INITIAL_ETH_MINT = 1000 ether;
 
@@ -54,8 +52,9 @@ contract TestTwapBal is Test, Sort, Constants {
     uint256 public forkIdEth;
     uint256 public forkIdPolygon;
 
-    function setUp() public virtual {
+    TRouter public router;
 
+    function setUp() public virtual {
         string memory MAINNET_RPC_URL = vm.envString("MAINNET_RPC_URL");
         forkIdEth = vm.createFork(MAINNET_RPC_URL);
 
@@ -63,8 +62,8 @@ contract TestTwapBal is Test, Sort, Constants {
         vm.deal(userB, INITIAL_ETH_MINT);
         vm.deal(userC, INITIAL_ETH_MINT);
 
-        usdc = IERC20(address(new ERC20Mock{salt: "1"}(6)));
-        usdt = IERC20(address(new ERC20Mock{salt: "2"}(6)));
+        usdc = IERC20(address(new ERC20Mock{salt: "1"}(18)));
+        usdt = IERC20(address(new ERC20Mock{salt: "2"}(18)));
 
         /// initial mint
         ERC20Mock(address(usdc)).mint(userA, INITIAL_USDC_AMT);
@@ -79,16 +78,63 @@ contract TestTwapBal is Test, Sort, Constants {
         ERC20Mock(address(usdc)).mint(userB, INITIAL_USDC_AMT);
         ERC20Mock(address(usdt)).mint(userB, INITIAL_USDT_AMT);
 
+        router = new TRouter();
+
         // MAX approve "vault" by all users
         for (uint160 i = 1; i <= 3; i++) {
             vm.startPrank(address(i)); // address(0x1) == address(1)
             usdc.approve(vaultV3, type(uint256).max);
             usdt.approve(vaultV3, type(uint256).max);
+            usdc.approve(address(router), type(uint256).max);
+            usdt.approve(address(router), type(uint256).max);
             vm.stopPrank();
         }
     }
 
-    function createStablePool(IERC20[] memory assets, uint256 amplificationParameter, address owner)
+    function createStablePool(
+        IERC20[] memory assets,
+        address poolHookContract,
+        uint256 amplificationParameter,
+        address admin
+    ) public returns (address) {
+        // sort tokens
+        IERC20[] memory tokens = new IERC20[](assets.length);
+
+        tokens = sort(assets);
+
+        TokenConfig[] memory tokenConfigs = new TokenConfig[](assets.length);
+        for (uint256 i = 0; i < tokens.length; i++) {
+            tokenConfigs[i] = TokenConfig({
+                token: tokens[i],
+                tokenType: TokenType.STANDARD,
+                rateProvider: IRateProvider(address(0)),
+                paysYieldFees: false
+            });
+        }
+        PoolRoleAccounts memory roleAccounts;
+        roleAccounts.pauseManager = admin;
+        roleAccounts.swapFeeManager = admin;
+        roleAccounts.poolCreator = address(0);
+
+        address pool = address(
+            StablePoolFactory(address(stablePoolFactory)).create(
+                "Cod3x-USD-Pool",
+                "CUP",
+                tokenConfigs,
+                amplificationParameter, // test only
+                roleAccounts,
+                1e12, // 0.001% (in WAD)
+                poolHookContract,
+                false,
+                false,
+                bytes32(keccak256(abi.encode(tokenConfigs, bytes("Cod3x-USD-Pool"), bytes("CUP"))))
+            )
+        );
+
+        return (address(pool));
+    }
+
+    function createWeightedPool(IERC20[] memory assets, address poolHookContract, address admin)
         public
         returns (address)
     {
@@ -107,25 +153,30 @@ contract TestTwapBal is Test, Sort, Constants {
             });
         }
         PoolRoleAccounts memory roleAccounts;
-        roleAccounts.pauseManager = address(0);
-        roleAccounts.swapFeeManager = address(0);
+        roleAccounts.pauseManager = admin;
+        roleAccounts.swapFeeManager = admin;
         roleAccounts.poolCreator = address(0);
 
-        address stablePool = address(
-            StablePoolFactory(address(stablePoolFactory)).create(
+        uint256[] memory normalizedWeights = new uint256[](assets.length);
+        for (uint256 i = 0; i < assets.length; i++) {
+            normalizedWeights[i] = 1e18 / assets.length;
+        }
+
+        address pool = address(
+            WeightedPoolFactory(address(weightedPoolFactory)).create(
                 "Cod3x-USD-Pool",
                 "CUP",
                 tokenConfigs,
-                amplificationParameter, // test only
+                normalizedWeights, // test only
                 roleAccounts,
-                1e12, // 0.001% (in WAD)
-                address(0),
+                1e14, // 0.1% (in WAD)
+                poolHookContract,
                 false,
                 false,
                 bytes32(keccak256(abi.encode(tokenConfigs, bytes("Cod3x-USD-Pool"), bytes("CUP"))))
             )
         );
 
-        return (address(stablePool));
+        return (address(pool));
     }
 }

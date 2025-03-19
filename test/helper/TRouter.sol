@@ -20,10 +20,9 @@ import {StablePoolFactory} from
     "lib/balancer-v3-monorepo/pkg/pool-stable/contracts/StablePoolFactory.sol";
 import {IRateProvider} from
     "lib/balancer-v3-monorepo/pkg/interfaces/contracts/solidity-utils/helpers/IRateProvider.sol";
-import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
+import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {IVaultExtension} from
     "lib/balancer-v3-monorepo/pkg/interfaces/contracts/vault/IVaultExtension.sol";
-
 import {Constants} from "./Constants.sol";
 
 contract TRouter is Constants {
