@@ -107,6 +107,8 @@ class StableSwapSimulator:
         
         df_dx = 4 * A - (d**3) / (4 * (x_float**2) * y_float)
         df_dy = 4 * A - (d**3) / (4 * x_float * (y_float**2))
+        # df_dx = 4 * A * (x_float**2) * y_float - (d**3) / 4
+        # df_dy = 4 * A * x_float * (y_float**2) - (d**3) / 4
         
         # Spot price Y/X = -dx/dy = df_dy / df_dx
         self.spot_price = df_dy / df_dx

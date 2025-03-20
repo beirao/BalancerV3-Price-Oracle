@@ -169,7 +169,7 @@ contract TestTwapBal is Test, Sort, Constants {
                 tokenConfigs,
                 normalizedWeights, // test only
                 roleAccounts,
-                1e14, // 0.1% (in WAD)
+                1e13, // 0.01% (in WAD)
                 poolHookContract,
                 false,
                 false,
