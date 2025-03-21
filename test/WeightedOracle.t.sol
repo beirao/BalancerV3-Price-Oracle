@@ -58,14 +58,32 @@ contract WeightedOracle is TestTwapBal {
         console2.log("Price (oracle) ::: %18e", hookOracleContract.getPrice(address(usdt)));
 
         _easySwap(1e18);
+        skip(100);
         console2.log("Price (oracle) ::: %18e", hookOracleContract.getPrice(address(usdt)));
         _easySwap(1e18);
+        skip(100);
         console2.log("Price (oracle) ::: %18e", hookOracleContract.getPrice(address(usdt)));
     }
 
+    function test_getGeomeanPrice() public {
+        _easySwap(10_000e18);
+        // console2.log("Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt)));
+
+        _easySwap(1e18);
+
+        _easySwap(10_000e18);
+
+        _easySwap(1e18);
+
+        // console2.log("Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt)));
+        _easySwap(1e18);
+        console2.log("Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt)));
+    }
     /// -------- Helpers --------- ///
 
     function _easySwap(uint256 amount) public {
+        skip(100);
+        vm.roll(block.number + 1);
         // Get initial balances
         uint256 initialUsdtBalance = usdt.balanceOf(address(userC));
         uint256 initialUsdcBalance = usdc.balanceOf(address(userC));
