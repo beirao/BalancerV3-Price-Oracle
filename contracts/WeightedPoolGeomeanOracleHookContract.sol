@@ -22,26 +22,27 @@ import {WeightedPoolImmutableData} from
 import {WeightedPool} from "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts/WeightedPool.sol";
 import "lib/solmate/src/utils/FixedPointMathLib.sol";
 import "lib/solmate/src/utils/SignedWadMath.sol";
+import "lib/solmate/src/utils/SafeCastLib.sol";
 
 contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
     using FixedPointMathLib for uint256;
+    using SafeCastLib for uint256;
 
     struct Observation {
-        uint256 timestamp;
-        uint256 price;
+        uint40 timestamp;
+        uint216 price;
         int256 accumulatedPrice;
     }
 
-    // TODO merge all these into a single mapping => gas optimized struct
-    mapping(address => uint256) public tokenToWeight;
-    mapping(address => uint256) public tokenToIndex;
-    mapping(address => Observation[]) public tokenToObservations;
-    mapping(address => uint256) public tokenToLastBlockNumber;
-    mapping(address => uint256) public tokenToLastTimestamp;
-    mapping(address => int256) public tokenToLastAccumulatedPrice;
+    struct TokenData {
+        uint8 index;
+        uint248 lastBlockNumber;
+    }
 
-    address[] public tokensSorted;
-    address public immutable allowedFactory;
+    mapping(address => TokenData) public tokenToData;
+    mapping(address => Observation[]) public tokenToObservations;
+
+    address public immutable allowedFactory; //? useless since we can only register once?
     address public immutable referenceToken;
     address public immutable vault;
     address public pool;
@@ -52,11 +53,10 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
     );
 
     /// Errors
-    error WeightedPoolGeomeanOracleHookContract__REFERENCE_TOKEN_NOT_SUPPORTED();
     error WeightedPoolGeomeanOracleHookContract__ALREADY_REGISTERED();
     error WeightedPoolGeomeanOracleHookContract__FACTORY_NOT_ALLOWED(address factory);
     error WeightedPoolGeomeanOracleHookContract__POOL_NOT_FROM_FACTORY(address pool);
-    error WeightedPoolGeomeanOracleHookContract__TOKEN_NOT_INCLUDED();
+    error WeightedPoolGeomeanOracleHookContract__REFERENCE_TOKEN_NOT_SUPPORTED();
     error WeightedPoolGeomeanOracleHookContract__NOT_ENOUGH_OBSERVATIONS(
         uint256 numberOfObservations
     );
@@ -65,30 +65,14 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
      * @notice Initializes the oracle hook contract.
      * @param _vault The address of the Balancer V3 Vault.
      * @param _allowedFactory The address of the WeightedPool factory that is allowed to create pools with this hook.
-     * @param _tokensSorted The addresses of the tokens in the pool in the correct order.
      * @param _referenceToken The address of the token to use as reference for price calculations.
      */
-    constructor(
-        address _vault,
-        address _allowedFactory,
-        address[] memory _tokensSorted,
-        address _referenceToken
-    ) VaultGuard(IVault(_vault)) {
-        // Check if reference token is included in the pool.
-        bool isReferenceTokenIncluded_;
-        for (uint256 i; i < _tokensSorted.length; i++) {
-            if (_tokensSorted[i] == _referenceToken) {
-                isReferenceTokenIncluded_ = true;
-            }
-        }
-        if (!isReferenceTokenIncluded_) {
-            revert WeightedPoolGeomeanOracleHookContract__REFERENCE_TOKEN_NOT_SUPPORTED();
-        }
-
+    constructor(address _vault, address _allowedFactory, address _referenceToken)
+        VaultGuard(IVault(_vault))
+    {
         vault = _vault;
         allowedFactory = _allowedFactory;
         referenceToken = _referenceToken;
-        tokensSorted = _tokensSorted;
     }
 
     /// @inheritdoc BaseHooks
@@ -113,23 +97,32 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
             revert WeightedPoolGeomeanOracleHookContract__POOL_NOT_FROM_FACTORY(_pool);
         }
 
+        bool isReferenceTokenIncluded_;
         // Check if all tokens are included in the pool and in the correct order.
         for (uint256 i; i < _tokenConfigs.length; i++) {
-            tokenToIndex[address(_tokenConfigs[i].token)] = i;
-            if (address(_tokenConfigs[i].token) != tokensSorted[i]) {
-                revert WeightedPoolGeomeanOracleHookContract__TOKEN_NOT_INCLUDED();
+            address token_ = address(_tokenConfigs[i].token);
+
+            // Initialize tokenToIndex.
+            tokenToData[token_] =
+                TokenData({index: uint8(i), lastBlockNumber: uint248(block.number)});
+
+            // Check if reference token is included in the pool.
+            if (token_ == referenceToken) {
+                isReferenceTokenIncluded_ = true;
+            }
+
+            // Initialize observations.
+            // AccumulatedPrice is 0 because we don't have any price data yet.
+            // The oracle will be safe once the observation period has passed.
+            if (token_ != referenceToken) {
+                tokenToObservations[token_].push(
+                    Observation({timestamp: uint40(block.timestamp), price: 0, accumulatedPrice: 0})
+                );
             }
         }
 
-        // Initialize observations.
-        // AccumulatedPrice is 0 because we don't have any price data yet.
-        // The oracle will be safe once the observation period has passed.
-        for (uint256 i; i < _tokenConfigs.length; i++) {
-            if (address(_tokenConfigs[i].token) != referenceToken) {
-                tokenToObservations[address(_tokenConfigs[i].token)].push(
-                    Observation({timestamp: block.timestamp, price: 0, accumulatedPrice: 0})
-                );
-            }
+        if (!isReferenceTokenIncluded_) {
+            revert WeightedPoolGeomeanOracleHookContract__REFERENCE_TOKEN_NOT_SUPPORTED();
         }
 
         emit WeightedPoolGeomeanOracleHookContractRegistered(address(this), _pool);
@@ -150,69 +143,93 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
         onlyVault
         returns (bool, uint256)
     {
-        // Init tokenToWeight. Can be called only once since weights doesn't change.
-        if (tokenToWeight[address(params.tokenIn)] == 0) {
-            // Unfortunatelly, we cannot be called in onRegister because the pool is not yet initialized. (PoolNotRegistered())
-            WeightedPoolImmutableData memory poolData =
-                WeightedPool(params.pool).getWeightedPoolImmutableData();
-            for (uint256 i = 0; i < poolData.tokens.length; i++) {
-                tokenToWeight[address(poolData.tokens[i])] = poolData.normalizedWeights[i];
-            }
-        }
-
+        uint256[] memory indexToWeight_ = WeightedPool(params.pool).getNormalizedWeights();
+        uint256 referenceTokenIndex_ = tokenToData[referenceToken].index;
         (,,, uint256[] memory lastBalancesWad_) = IVault(vault).getPoolTokenInfo(params.pool);
-
-        // Spot price == x * Wy / y * Wx = (x / Wx) / (y / Wy)
         uint256 denominator_ =
-            lastBalancesWad_[tokenToIndex[referenceToken]].divWadDown(tokenToWeight[referenceToken]);
+            lastBalancesWad_[referenceTokenIndex_].divWadDown(indexToWeight_[referenceTokenIndex_]);
 
         // Update prices of the tokens swapped.
-        _updatePrice(address(params.tokenIn), lastBalancesWad_, denominator_);
-        _updatePrice(address(params.tokenOut), lastBalancesWad_, denominator_);
+        if (address(params.tokenIn) != referenceToken) {
+            uint256 tokenInIndex_ = tokenToData[address(params.tokenIn)].index;
+            _updatePrice(
+                address(params.tokenIn),
+                tokenInIndex_,
+                indexToWeight_[tokenInIndex_],
+                lastBalancesWad_,
+                denominator_
+            );
+        }
+
+        if (address(params.tokenOut) != referenceToken) {
+            uint256 tokenOutIndex_ = tokenToData[address(params.tokenOut)].index;
+            _updatePrice(
+                address(params.tokenOut),
+                tokenOutIndex_,
+                indexToWeight_[tokenOutIndex_],
+                lastBalancesWad_,
+                denominator_
+            );
+        }
 
         return (true, 0);
     }
 
-    function _updatePrice(address token_, uint256[] memory lastBalancesWad_, uint256 denominator_)
-        internal
-    {
-        if (token_ != referenceToken) {
-            Observation[] storage tokenToObservation = tokenToObservations[token_];
-            Observation storage lastObservation = tokenToObservation[tokenToObservation.length - 1];
+    /**
+     * @notice Calculate the accumulated price based on the previous observation, timestamp and price.
+     * @param observation The observation containing timestamp and accumulatedPrice.
+     * @param timestamp_ The timestamp for which to calculate the accumulatedPrice.
+     * @param price_ The price at the timestamp.
+     * @return _accumulatedPrice The calculated accumulated price.
+     */
+    function _calculateAccumulatedPrice(
+        Observation storage observation,
+        uint256 timestamp_,
+        uint256 price_
+    ) internal view returns (int256) {
+        return observation.accumulatedPrice
+            + (int256(timestamp_) - int40(observation.timestamp)) * wadLn(int256(price_));
+    }
+  
+    // Spot price == (x / Wx) / (y / Wy)
+    function _updatePrice(
+        address tokenAddress_,
+        uint256 tokenIndex_,
+        uint256 tokenWeight_,
+        uint256[] memory lastBalancesWad_,
+        uint256 denominator_
+    ) internal {
+        Observation[] storage tokenToObservation = tokenToObservations[tokenAddress_];
+        Observation storage lastObservation = tokenToObservation[tokenToObservation.length - 1];
 
-            uint256 numerator_ =
-                lastBalancesWad_[tokenToIndex[token_]].divWadDown(tokenToWeight[token_]);
-            uint256 lastPrice_ = numerator_.divWadDown(denominator_);
+        uint256 numerator_ = lastBalancesWad_[tokenIndex_].divWadDown(tokenWeight_);
+        uint256 lastPrice_ = numerator_.divWadDown(denominator_);
 
-            // Update observations with the last accumulatedPrice of a new block.
-            // So we have maximum 1 observation per block.
-            if (tokenToLastBlockNumber[token_] != block.number) {
-                uint256 lastTimestamp_ = lastObservation.timestamp;
-                int256 lastAccumulatedPrice_ = lastObservation.accumulatedPrice;
-                int256 nextAccumulatedPrice_ = lastAccumulatedPrice_
-                    + (int256(block.timestamp) - int256(lastTimestamp_)) * wadLn(int256(lastPrice_));
+        // Update observations with the last accumulatedPrice of a new block.
+        // So we have maximum 1 observation per block.
+        if (tokenToData[tokenAddress_].lastBlockNumber != block.number) {
+            int256 nextAccumulatedPrice_ =
+                _calculateAccumulatedPrice(lastObservation, block.timestamp, lastPrice_);
 
-                tokenToObservation.push(
-                    Observation({
-                        timestamp: block.timestamp,
-                        price: lastPrice_,
-                        accumulatedPrice: nextAccumulatedPrice_
-                    })
-                );
+            tokenToObservation.push(
+                Observation({
+                    timestamp: uint40(block.timestamp),
+                    price: lastPrice_.safeCastTo216(),
+                    accumulatedPrice: nextAccumulatedPrice_
+                })
+            );
 
-                tokenToLastBlockNumber[token_] = block.number;
-                tokenToLastTimestamp[token_] = lastTimestamp_;
-                tokenToLastAccumulatedPrice[token_] = lastAccumulatedPrice_;
-            } else {
-                lastObservation.accumulatedPrice = tokenToLastAccumulatedPrice[token_]
-                    + (int256(block.timestamp) - int256(tokenToLastTimestamp[token_]))
-                        * wadLn(int256(lastPrice_));
-                lastObservation.price = lastPrice_;
-                // We don't need to update the timestamp because it stays the same within the same block.
-            }
-
-            // TODO emit event
+            tokenToData[tokenAddress_].lastBlockNumber = uint248(block.number);
+        } else {
+            Observation storage secondLastObservation =
+                tokenToObservation[tokenToObservation.length - 2];
+            lastObservation.accumulatedPrice =
+                _calculateAccumulatedPrice(secondLastObservation, block.timestamp, lastPrice_);
+            lastObservation.price = lastPrice_.safeCastTo216();
+            // We don't need to update the timestamp because it stays the same within the same block.
         }
+
+        // TODO emit event
     }
 
     function _binarySearch(Observation[] storage observations, uint256 targetTimestamp_)
@@ -240,7 +257,7 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
 
             if (observations[mid_].timestamp == targetTimestamp_) {
                 return mid_; // Exact match
-            } else if (observations[mid_].timestamp < targetTimestamp_) {
+            } else if (targetTimestamp_ > observations[mid_].timestamp) {
                 low_ = mid_ + 1;
             } else {
                 high_ = mid_;
@@ -268,34 +285,27 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
         returns (uint256)
     {
         Observation[] storage observations = tokenToObservations[token_];
-        Observation storage observations1 = observations[observations.length - 1];
+        Observation storage observationsNow = observations[observations.length - 1];
         uint256 startPeriodTimestamp_ = block.timestamp - observationPeriod_;
-        Observation storage observations2 =
+        Observation storage observationsPeriodStart =
             observations[_binarySearch(observations, startPeriodTimestamp_)];
 
-        int256 apNow_ = observations1.accumulatedPrice
-            + (int256(block.timestamp) - int256(observations1.timestamp))
-                * wadLn(int256(observations1.price));
-
-        int256 apPeriod_ = observations2.accumulatedPrice
-            + (int256(startPeriodTimestamp_) - int256(observations2.timestamp))
-                * wadLn(int256(observations2.price));
-
-        console2.log("cpNow_    ::: %18e", apNow_);
-        console2.log("cpPeriod_ ::: %18e", apPeriod_);
-        console2.log("observationPeriod_Theorical ::: ", int256(startPeriodTimestamp_));
-        console2.log("observationPeriod_Real      ::: ", int256(observations2.timestamp));
-
-        int256 numerator_ = apNow_ - apPeriod_;
+        int256 numerator_ = _calculateAccumulatedPrice(
+            observationsNow, block.timestamp, observationsNow.price
+        )
+            - _calculateAccumulatedPrice(
+                observationsPeriodStart, startPeriodTimestamp_, observationsPeriodStart.price
+            );
 
         return uint256(wadExp(numerator_ / int256(observationPeriod_)));
     }
 
     /**
      * @notice Get the price of the pool.
-     * @return price The price of the pool in units of the reference token.
+     * @param token_ The address of the token to get the price of.
+     * @return _price The price of the pool in units of the reference token.
      */
-    function getPrice(address token) public view returns (uint256) {
-        return tokenToObservations[token][tokenToObservations[token].length - 1].price; // TODO: scale to reference token decimals
+    function getPrice(address token_) public view returns (uint256) {
+        return tokenToObservations[token_][tokenToObservations[token_].length - 1].price; // TODO: scale to reference token decimals
     }
 }

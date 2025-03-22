@@ -30,7 +30,7 @@ contract WeightedOracle is TestTwapBal {
         }
 
         hookOracleContract = new WeightedPoolGeomeanOracleHookContract(
-            address(vaultV3), address(weightedPoolFactory), assetsSorted, address(usdc)
+            address(vaultV3), address(weightedPoolFactory), address(usdc)
         );
 
         pool = WeightedPool(createWeightedPool(assets, address(hookOracleContract), address(this)));
@@ -50,33 +50,35 @@ contract WeightedOracle is TestTwapBal {
 
     function test_easySwap(uint256 amount) public {
         amount = bound(amount, 1e18, 10_000e18);
-        _easySwap(amount);
+        _easySwap(amount, 100);
     }
 
     function test_getPrice() public {
-        _easySwap(10_000e18);
+        _easySwap(10_000e18, 100);
         console2.log("Price (oracle) ::: %18e", hookOracleContract.getPrice(address(usdt)));
 
-        _easySwap(1e18);
-        skip(100);
+        _easySwap(1e18, 100);
         console2.log("Price (oracle) ::: %18e", hookOracleContract.getPrice(address(usdt)));
-        _easySwap(1e18);
-        skip(100);
+        _easySwap(1e18, 100);
         console2.log("Price (oracle) ::: %18e", hookOracleContract.getPrice(address(usdt)));
     }
 
     function test_getGeomeanPrice() public {
-        _easySwap(10_000e18); // n = 1
+        _easySwap(10_000e18, 100); // n = 1
         // console2.log("Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt)));
 
-        _easySwap(1e18); // n = 2
+        _easySwap(1e18, 100); // n = 2
 
-        _easySwap(10_000e18); // n = 3
+        _easySwap(10_000e18, 100); // n = 3
 
-        _easySwap(1e18); // n = 4
+        _easySwap(1e18, 100); // n = 4
 
         // console2.log("Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt)));
-        _easySwap(1e10); // n = 5
+        _easySwap(1e10, 100); // n = 5
+        _easySwap(100e18, 100); // n = 5
+        _easySwap(100e18, 5); // n = 5
+        _easySwap(1e18, 100); // n = 4
+
         console2.log(
             "Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt), 100)
         );
@@ -86,9 +88,9 @@ contract WeightedOracle is TestTwapBal {
     }
     /// -------- Helpers --------- ///
 
-    function _easySwap(uint256 amount) public {
-        skip(100);
-        vm.roll(block.number + 1);
+    function _easySwap(uint256 amount, uint256 skip) public {
+        vm.warp(block.timestamp + skip);
+        vm.roll(skip > 10 ? block.number + 1 : block.number);
         // Get initial balances
         uint256 initialUsdtBalance = usdt.balanceOf(address(userC));
         uint256 initialUsdcBalance = usdc.balanceOf(address(userC));
