@@ -28,13 +28,13 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
 
     struct Observation {
         uint256 timestamp;
+        uint256 price;
         int256 accumulatedPrice;
     }
 
     // TODO merge all these into a single mapping => gas optimized struct
     mapping(address => uint256) public tokenToWeight;
     mapping(address => uint256) public tokenToIndex;
-    mapping(address => uint256) public tokenToLastPrice; // TODO: remove
     mapping(address => Observation[]) public tokenToObservations;
     mapping(address => uint256) public tokenToLastBlockNumber;
     mapping(address => uint256) public tokenToLastTimestamp;
@@ -57,6 +57,9 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
     error WeightedPoolGeomeanOracleHookContract__FACTORY_NOT_ALLOWED(address factory);
     error WeightedPoolGeomeanOracleHookContract__POOL_NOT_FROM_FACTORY(address pool);
     error WeightedPoolGeomeanOracleHookContract__TOKEN_NOT_INCLUDED();
+    error WeightedPoolGeomeanOracleHookContract__NOT_ENOUGH_OBSERVATIONS(
+        uint256 numberOfObservations
+    );
 
     /**
      * @notice Initializes the oracle hook contract.
@@ -86,7 +89,6 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
         allowedFactory = _allowedFactory;
         referenceToken = _referenceToken;
         tokensSorted = _tokensSorted;
-        tokenToLastPrice[referenceToken] = 10 ** ERC20(_referenceToken).decimals();
     }
 
     /// @inheritdoc BaseHooks
@@ -125,7 +127,7 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
         for (uint256 i; i < _tokenConfigs.length; i++) {
             if (address(_tokenConfigs[i].token) != referenceToken) {
                 tokenToObservations[address(_tokenConfigs[i].token)].push(
-                    Observation({timestamp: block.timestamp, accumulatedPrice: 0})
+                    Observation({timestamp: block.timestamp, price: 0, accumulatedPrice: 0})
                 );
             }
         }
@@ -160,78 +162,133 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
 
         (,,, uint256[] memory lastBalancesWad_) = IVault(vault).getPoolTokenInfo(params.pool);
 
-        // Spot price == x * Wy / y * Wx
-        uint256 weightReferenceToken_ = tokenToWeight[address(referenceToken)];
-        uint256 denominator_ = lastBalancesWad_[tokenToIndex[address(referenceToken)]].mulWadDown(
-            tokenToWeight[address(params.tokenIn)]
-        );
+        // Spot price == x * Wy / y * Wx = (x / Wx) / (y / Wy)
+        uint256 denominator_ =
+            lastBalancesWad_[tokenToIndex[referenceToken]].divWadDown(tokenToWeight[referenceToken]);
 
         // Update prices of the tokens swapped.
-        updatePrice(address(params.tokenIn), lastBalancesWad_, weightReferenceToken_, denominator_);
-        updatePrice(address(params.tokenOut), lastBalancesWad_, weightReferenceToken_, denominator_);
+        _updatePrice(address(params.tokenIn), lastBalancesWad_, denominator_);
+        _updatePrice(address(params.tokenOut), lastBalancesWad_, denominator_);
 
         return (true, 0);
     }
 
-    function updatePrice(
-        address token_,
-        uint256[] memory lastBalancesWad_,
-        uint256 weightReferenceToken_,
-        uint256 denominator_
-    ) internal {
-        if (address(token_) != referenceToken) {
-            Observation[] storage tokenToObservation = tokenToObservations[address(token_)];
+    function _updatePrice(address token_, uint256[] memory lastBalancesWad_, uint256 denominator_)
+        internal
+    {
+        if (token_ != referenceToken) {
+            Observation[] storage tokenToObservation = tokenToObservations[token_];
+            Observation storage lastObservation = tokenToObservation[tokenToObservation.length - 1];
 
             uint256 numerator_ =
-                lastBalancesWad_[tokenToIndex[address(token_)]].mulWadDown(weightReferenceToken_);
+                lastBalancesWad_[tokenToIndex[token_]].divWadDown(tokenToWeight[token_]);
             uint256 lastPrice_ = numerator_.divWadDown(denominator_);
-            tokenToLastPrice[address(token_)] = lastPrice_;
-            uint256 obsLen_ = tokenToObservation.length - 1;
 
             // Update observations with the last accumulatedPrice of a new block.
             // So we have maximum 1 observation per block.
-            if (tokenToLastBlockNumber[address(token_)] != block.number) {
-                uint256 lastTimestamp_ = tokenToObservation[obsLen_].timestamp;
-                int256 lastAccumulatedPrice_ = tokenToObservation[obsLen_].accumulatedPrice;
+            if (tokenToLastBlockNumber[token_] != block.number) {
+                uint256 lastTimestamp_ = lastObservation.timestamp;
+                int256 lastAccumulatedPrice_ = lastObservation.accumulatedPrice;
                 int256 nextAccumulatedPrice_ = lastAccumulatedPrice_
                     + (int256(block.timestamp) - int256(lastTimestamp_)) * wadLn(int256(lastPrice_));
 
                 tokenToObservation.push(
                     Observation({
                         timestamp: block.timestamp,
+                        price: lastPrice_,
                         accumulatedPrice: nextAccumulatedPrice_
                     })
                 );
 
-                tokenToLastBlockNumber[address(token_)] = block.number;
-                tokenToLastTimestamp[address(token_)] = lastTimestamp_;
-                tokenToLastAccumulatedPrice[address(token_)] = lastAccumulatedPrice_;
+                tokenToLastBlockNumber[token_] = block.number;
+                tokenToLastTimestamp[token_] = lastTimestamp_;
+                tokenToLastAccumulatedPrice[token_] = lastAccumulatedPrice_;
             } else {
-                tokenToObservation[obsLen_].accumulatedPrice = tokenToLastAccumulatedPrice[address(
-                    token_
-                )]
-                    + (int256(block.timestamp) - int256(tokenToLastTimestamp[address(token_)]))
+                lastObservation.accumulatedPrice = tokenToLastAccumulatedPrice[token_]
+                    + (int256(block.timestamp) - int256(tokenToLastTimestamp[token_]))
                         * wadLn(int256(lastPrice_));
+                lastObservation.price = lastPrice_;
                 // We don't need to update the timestamp because it stays the same within the same block.
             }
+
             // TODO emit event
         }
+    }
+
+    function _binarySearch(Observation[] storage observations, uint256 targetTimestamp_)
+        internal
+        view
+        returns (uint256)
+    {
+        uint256 lastIndex_ = observations.length - 1;
+
+        if (observations.length == 0 || targetTimestamp_ <= observations[0].timestamp) {
+            revert WeightedPoolGeomeanOracleHookContract__NOT_ENOUGH_OBSERVATIONS(lastIndex_ + 1);
+        }
+
+        // If target timestamp is after the latest observation, return the latest
+        if (targetTimestamp_ >= observations[lastIndex_].timestamp) {
+            return lastIndex_;
+        }
+
+        // Binary search to find the closest observation
+        uint256 low_ = 0; // TODO can be obtimized
+        uint256 high_ = lastIndex_;
+
+        while (low_ < high_) {
+            uint256 mid_ = (low_ + high_) / 2;
+
+            if (observations[mid_].timestamp == targetTimestamp_) {
+                return mid_; // Exact match
+            } else if (observations[mid_].timestamp < targetTimestamp_) {
+                low_ = mid_ + 1;
+            } else {
+                high_ = mid_;
+            }
+        }
+
+        // At this point, low == high_
+        // If the timestamp at low is greater than target, we need the previous observation
+        if (observations[low_].timestamp > targetTimestamp_) {
+            return low_ - 1;
+        }
+
+        return low_;
     }
 
     // TODO
     /// @dev Geomean price = ∏(x_i^ΔT_i)^(1/n)
     //                     = exp(Σ(ΔT_i * ln(price_i)) / n)
-    function getGeomeanPrice(address token_, uint256 observationPeriod) public view returns (uint256) {
-        return uint256(
-            wadExp(
-                tokenToObservations[address(token_)][tokenToObservations[address(token_)].length - 1]
-                    .accumulatedPrice
-                    / int256(
-                        tokenToObservations[address(token_)][tokenToObservations[address(token_)].length
-                            - 1].timestamp - tokenToObservations[address(token_)][0].timestamp
-                    )
-            )
-        );
+    //
+    /// @dev Geomean price over a period = exp(accumulatedPrice(timestamp - period) - accumulatedPrice(timestamp)) / observationPeriod_)
+    //
+    function getGeomeanPrice(address token_, uint256 observationPeriod_)
+        public
+        view
+        returns (uint256)
+    {
+        Observation[] storage observations = tokenToObservations[token_];
+        Observation storage observations1 = observations[observations.length - 1];
+        uint256 startPeriodTimestamp_ = block.timestamp - observationPeriod_;
+        Observation storage observations2 =
+            observations[_binarySearch(observations, startPeriodTimestamp_)];
+
+        int256 apNow_ = observations1.accumulatedPrice
+            + (int256(block.timestamp) - int256(observations1.timestamp))
+                * wadLn(int256(observations1.price));
+
+        int256 apPeriod_ = observations2.accumulatedPrice
+            + (int256(startPeriodTimestamp_) - int256(observations2.timestamp))
+                * wadLn(int256(observations2.price));
+
+        console2.log("cpNow_    ::: %18e", apNow_);
+        console2.log("cpPeriod_ ::: %18e", apPeriod_);
+        console2.log("observationPeriod_Theorical ::: ", int256(startPeriodTimestamp_));
+        console2.log("observationPeriod_Real      ::: ", int256(observations2.timestamp));
+
+        int256 numerator_ = apNow_ - apPeriod_;
+
+        return uint256(wadExp(numerator_ / int256(observationPeriod_)));
     }
 
     /**
@@ -239,6 +296,6 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
      * @return price The price of the pool in units of the reference token.
      */
     function getPrice(address token) public view returns (uint256) {
-        return tokenToLastPrice[token]; // TODO: scale to reference token decimals
+        return tokenToObservations[token][tokenToObservations[token].length - 1].price; // TODO: scale to reference token decimals
     }
 }

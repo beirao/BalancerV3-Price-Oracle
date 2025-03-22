@@ -66,18 +66,23 @@ contract WeightedOracle is TestTwapBal {
     }
 
     function test_getGeomeanPrice() public {
-        _easySwap(10_000e18);
+        _easySwap(10_000e18); // n = 1
         // console2.log("Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt)));
 
-        _easySwap(1e18);
+        _easySwap(1e18); // n = 2
 
-        _easySwap(10_000e18);
+        _easySwap(10_000e18); // n = 3
 
-        _easySwap(1e18);
+        _easySwap(1e18); // n = 4
 
         // console2.log("Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt)));
-        _easySwap(1e18);
-        console2.log("Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt)));
+        _easySwap(1e10); // n = 5
+        console2.log(
+            "Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt), 100)
+        );
+        console2.log(
+            "Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt), 190)
+        );
     }
     /// -------- Helpers --------- ///
 
