@@ -24,6 +24,7 @@ import "lib/solmate/src/utils/FixedPointMathLib.sol";
 import "lib/solmate/src/utils/SignedWadMath.sol";
 import "lib/solmate/src/utils/SafeCastLib.sol";
 
+// TODO create the IGeomeanOracleHookContract interface
 contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
     using FixedPointMathLib for uint256;
     using SafeCastLib for uint256;
@@ -51,6 +52,7 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
     event WeightedPoolGeomeanOracleHookContractRegistered(
         address indexed hook, address indexed pool
     );
+    event WeightedPoolGeomeanOracleHookContractPriceUpdated(address indexed token, uint256 price);
 
     /// Errors
     error WeightedPoolGeomeanOracleHookContract__ALREADY_REGISTERED();
@@ -116,7 +118,11 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
             // The oracle will be safe once the observation period has passed.
             if (token_ != referenceToken) {
                 tokenToObservations[token_].push(
-                    Observation({timestamp: uint40(block.timestamp), price: 0, accumulatedPrice: 0})
+                    Observation({
+                        timestamp: uint40(block.timestamp),
+                        price: 1e18,
+                        accumulatedPrice: 0
+                    })
                 );
             }
         }
@@ -179,18 +185,17 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
      * @notice Calculate the accumulated price based on the previous observation, timestamp and price.
      * @param observation The observation containing timestamp and accumulatedPrice.
      * @param timestamp_ The timestamp for which to calculate the accumulatedPrice.
-     * @param price_ The price at the timestamp.
      * @return _accumulatedPrice The calculated accumulated price.
      */
-    function _calculateAccumulatedPrice(
-        Observation storage observation,
-        uint256 timestamp_,
-        uint256 price_
-    ) internal view returns (int256) {
+    function _calculateAccumulatedPrice(Observation storage observation, uint256 timestamp_)
+        internal
+        view
+        returns (int256)
+    {
         return observation.accumulatedPrice
-            + (int256(timestamp_) - int40(observation.timestamp)) * wadLn(int256(price_));
+            + (int256(timestamp_ - observation.timestamp)) * wadLn(int216(observation.price)); // Safe cast.
     }
-  
+
     // Spot price == (x / Wx) / (y / Wy)
     function _updatePrice(
         address tokenAddress_,
@@ -209,7 +214,7 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
         // So we have maximum 1 observation per block.
         if (tokenToData[tokenAddress_].lastBlockNumber != block.number) {
             int256 nextAccumulatedPrice_ =
-                _calculateAccumulatedPrice(lastObservation, block.timestamp, lastPrice_);
+                _calculateAccumulatedPrice(lastObservation, block.timestamp);
 
             tokenToObservation.push(
                 Observation({
@@ -224,32 +229,32 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
             Observation storage secondLastObservation =
                 tokenToObservation[tokenToObservation.length - 2];
             lastObservation.accumulatedPrice =
-                _calculateAccumulatedPrice(secondLastObservation, block.timestamp, lastPrice_);
+                _calculateAccumulatedPrice(secondLastObservation, block.timestamp);
             lastObservation.price = lastPrice_.safeCastTo216();
             // We don't need to update the timestamp because it stays the same within the same block.
         }
 
-        // TODO emit event
+        emit WeightedPoolGeomeanOracleHookContractPriceUpdated(tokenAddress_, lastPrice_);
     }
 
-    function _binarySearch(Observation[] storage observations, uint256 targetTimestamp_)
-        internal
-        view
-        returns (uint256)
-    {
+    function _binarySearch(
+        Observation[] storage observations,
+        uint256 targetTimestamp_,
+        uint256 hintLow_
+    ) internal view returns (uint256) {
         uint256 lastIndex_ = observations.length - 1;
 
         if (observations.length == 0 || targetTimestamp_ <= observations[0].timestamp) {
             revert WeightedPoolGeomeanOracleHookContract__NOT_ENOUGH_OBSERVATIONS(lastIndex_ + 1);
         }
 
-        // If target timestamp is after the latest observation, return the latest
+        // If target timestamp is after the latest observation, return the latest.
         if (targetTimestamp_ >= observations[lastIndex_].timestamp) {
             return lastIndex_;
         }
 
-        // Binary search to find the closest observation
-        uint256 low_ = 0; // TODO can be obtimized
+        // Binary search to find the closest observation.
+        uint256 low_ = hintLow_; // Hint low allows to skip the first part of the array. 0 if you don't have a hint.
         uint256 high_ = lastIndex_;
 
         while (low_ < high_) {
@@ -257,7 +262,7 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
 
             if (observations[mid_].timestamp == targetTimestamp_) {
                 return mid_; // Exact match
-            } else if (targetTimestamp_ > observations[mid_].timestamp) {
+            } else if (observations[mid_].timestamp < targetTimestamp_) {
                 low_ = mid_ + 1;
             } else {
                 high_ = mid_;
@@ -265,7 +270,7 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
         }
 
         // At this point, low == high_
-        // If the timestamp at low is greater than target, we need the previous observation
+        // If the timestamp at low is greater than target, we need the previous observation.
         if (observations[low_].timestamp > targetTimestamp_) {
             return low_ - 1;
         }
@@ -280,6 +285,14 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
     /// @dev Geomean price over a period = exp(accumulatedPrice(timestamp - period) - accumulatedPrice(timestamp)) / observationPeriod_)
     //
     function getGeomeanPrice(address token_, uint256 observationPeriod_)
+        external
+        view
+        returns (uint256)
+    {
+        return getGeomeanPrice(token_, observationPeriod_, 0);
+    }
+
+    function getGeomeanPrice(address token_, uint256 observationPeriod_, uint256 hintLow_)
         public
         view
         returns (uint256)
@@ -288,14 +301,10 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
         Observation storage observationsNow = observations[observations.length - 1];
         uint256 startPeriodTimestamp_ = block.timestamp - observationPeriod_;
         Observation storage observationsPeriodStart =
-            observations[_binarySearch(observations, startPeriodTimestamp_)];
+            observations[_binarySearch(observations, startPeriodTimestamp_, hintLow_)];
 
-        int256 numerator_ = _calculateAccumulatedPrice(
-            observationsNow, block.timestamp, observationsNow.price
-        )
-            - _calculateAccumulatedPrice(
-                observationsPeriodStart, startPeriodTimestamp_, observationsPeriodStart.price
-            );
+        int256 numerator_ = _calculateAccumulatedPrice(observationsNow, block.timestamp)
+            - _calculateAccumulatedPrice(observationsPeriodStart, startPeriodTimestamp_);
 
         return uint256(wadExp(numerator_ / int256(observationPeriod_)));
     }
