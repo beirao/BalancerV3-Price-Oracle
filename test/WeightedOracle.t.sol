@@ -55,12 +55,12 @@ contract WeightedOracle is TestTwapBal {
 
     function test_getPrice() public {
         _easySwap(10_000e18, 100);
-        console2.log("Price (oracle) ::: %18e", hookOracleContract.getPrice(address(usdt)));
+        console2.log("Price (oracle) ::: %18e", hookOracleContract.getLastPrice(address(usdt)));
 
         _easySwap(1e18, 100);
-        console2.log("Price (oracle) ::: %18e", hookOracleContract.getPrice(address(usdt)));
+        console2.log("Price (oracle) ::: %18e", hookOracleContract.getLastPrice(address(usdt)));
         _easySwap(1e18, 100);
-        console2.log("Price (oracle) ::: %18e", hookOracleContract.getPrice(address(usdt)));
+        console2.log("Price (oracle) ::: %18e", hookOracleContract.getLastPrice(address(usdt)));
     }
 
     function test_getGeomeanPrice1() public {
@@ -77,45 +77,21 @@ contract WeightedOracle is TestTwapBal {
         // vm.warp(block.timestamp + 50);
 
         console2.log("---");
-        uint256 lastPrice = 0;
-        for (uint256 i = 1; i < 500; i++) {
-            uint256 price = hookOracleContract.getGeomeanPrice(address(usdt), i);
-            console2.log("Price (%d) ::: %18e ", i, price, lastPrice >= price);
-            lastPrice = price;
-        }
-        // console2.log(
-        //     "Price (%d) ::: %18e", 105, hookOracleContract.getGeomeanPrice(address(usdt), 100)
-        // );
-        // console2.log(
-        //     "Price (%d) ::: %18e", 106, hookOracleContract.getGeomeanPrice(address(usdt), 101)
-        // );
+        // uint256 lastPrice = 0;
+        // for (uint256 i = 1; i < 500; i++) {
+        //     uint256 price = hookOracleContract.getGeomeanPrice(address(usdt), i);
+        //     console2.log("Price (%d) ::: %18e ", i, price, lastPrice >= price);
+        //     lastPrice = price;
+        // }
+        console2.log(
+            "Price (%d) ::: %18e", 102, hookOracleContract.getGeomeanPrice(address(usdt), 102)
+        );
+        console2.log(
+            "Price (%d) ::: %18e", 103, hookOracleContract.getGeomeanPrice(address(usdt), 103)
+        );
         console2.log("---");
 
-        // console2.log(
-        //     "Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt), 100)
-        // );
-        // console2.log(
-        //     "Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt), 105)
-        // );
-        // console2.log(
-        //     "Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt), 106)
-        // );
-        // console2.log(
-        //     "Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt), 110)
-        // );
-        // console2.log(
-        //     "Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt), 190)
-        // );
-        // console2.log(
-        //     "Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt), 200)
-        // );
-        // console2.log(
-        //     "Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt), 205)
-        // );
-        // console2.log(
-        //     "Price (oracle) ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt), 220)
-        // );
-        _easySwap(1e10, 100); // n = 4
+        // _easySwap(1e10, 100); // n = 4
     }
 
     function test_getGeomeanPriceLinearity() public {
@@ -141,7 +117,7 @@ contract WeightedOracle is TestTwapBal {
     /// -------- Helpers --------- ///
 
     function _easySwap(uint256 amount, uint256 skip) public {
-        vm.warp(block.timestamp + skip);
+        vm.warp(block.timestamp / 12 * 12 + skip);
         vm.roll(block.timestamp / 12);
         // Get initial balances
         uint256 initialUsdtBalance = usdt.balanceOf(address(userC));

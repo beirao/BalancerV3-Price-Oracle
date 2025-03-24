@@ -23,45 +23,33 @@ import {WeightedPool} from "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts
 import "lib/solmate/src/utils/FixedPointMathLib.sol";
 import "lib/solmate/src/utils/SignedWadMath.sol";
 import "lib/solmate/src/utils/SafeCastLib.sol";
+import {IGeomeanOracleHookContract} from "./interfaces/IWeightedPoolGeomeanOracleHookContract.sol";
 
-// TODO create the IGeomeanOracleHookContract interface
-contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
+contract WeightedPoolGeomeanOracleHookContract is
+    IGeomeanOracleHookContract,
+    BaseHooks,
+    VaultGuard
+{
     using FixedPointMathLib for uint256;
     using SafeCastLib for uint256;
 
-    struct Observation {
-        uint40 timestamp;
-        uint216 price;
-        int256 accumulatedPrice;
-    }
+    /// @notice Mapping from token address to its metadata
+    mapping(address => TokenData) internal tokenToData;
 
-    struct TokenData {
-        uint8 index;
-        uint248 lastBlockNumber;
-    }
+    /// @notice Mapping from token address to its price observations history.
+    mapping(address => Observation[]) internal tokenToObservations;
 
-    mapping(address => TokenData) public tokenToData;
-    mapping(address => Observation[]) public tokenToObservations;
+    /// @notice Address of the factory allowed to create pools with this hook.
+    address internal immutable allowedFactory; //? useless since we can only register once?
 
-    address public immutable allowedFactory; //? useless since we can only register once?
-    address public immutable referenceToken;
-    address public immutable vault;
-    address public pool;
+    /// @notice Address of the token used as reference for price calculations.
+    address internal immutable referenceToken;
 
-    /// Events
-    event WeightedPoolGeomeanOracleHookContractRegistered(
-        address indexed hook, address indexed pool
-    );
-    event WeightedPoolGeomeanOracleHookContractPriceUpdated(address indexed token, uint256 price);
+    /// @notice Address of the Balancer V3 Vault.
+    address internal immutable vault;
 
-    /// Errors
-    error WeightedPoolGeomeanOracleHookContract__ALREADY_REGISTERED();
-    error WeightedPoolGeomeanOracleHookContract__FACTORY_NOT_ALLOWED(address factory);
-    error WeightedPoolGeomeanOracleHookContract__POOL_NOT_FROM_FACTORY(address pool);
-    error WeightedPoolGeomeanOracleHookContract__REFERENCE_TOKEN_NOT_SUPPORTED();
-    error WeightedPoolGeomeanOracleHookContract__NOT_ENOUGH_OBSERVATIONS(
-        uint256 numberOfObservations
-    );
+    /// @notice Address of the pool using this hook.
+    address internal pool;
 
     /**
      * @notice Initializes the oracle hook contract.
@@ -85,18 +73,18 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
         LiquidityManagement calldata
     ) public override onlyVault returns (bool) {
         if (pool != address(0)) {
-            revert WeightedPoolGeomeanOracleHookContract__ALREADY_REGISTERED();
+            revert GeomeanOracleHookContract__ALREADY_REGISTERED();
         }
         pool = _pool;
 
         // Check if factory is allowed.
         if (_factory != allowedFactory) {
-            revert WeightedPoolGeomeanOracleHookContract__FACTORY_NOT_ALLOWED(_factory);
+            revert GeomeanOracleHookContract__FACTORY_NOT_ALLOWED(_factory);
         }
 
         // Check if pool was created by the allowed factory.
         if (!BasePoolFactory(_factory).isPoolFromFactory(_pool)) {
-            revert WeightedPoolGeomeanOracleHookContract__POOL_NOT_FROM_FACTORY(_pool);
+            revert GeomeanOracleHookContract__POOL_NOT_FROM_FACTORY(_pool);
         }
 
         bool isReferenceTokenIncluded_;
@@ -128,10 +116,10 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
         }
 
         if (!isReferenceTokenIncluded_) {
-            revert WeightedPoolGeomeanOracleHookContract__REFERENCE_TOKEN_NOT_SUPPORTED();
+            revert GeomeanOracleHookContract__REFERENCE_TOKEN_NOT_SUPPORTED();
         }
 
-        emit WeightedPoolGeomeanOracleHookContractRegistered(address(this), _pool);
+        emit GeomeanOracleHookContractRegistered(address(this), _pool);
 
         return true;
     }
@@ -181,11 +169,92 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
         return (true, 0);
     }
 
+    // ============= VIEW FUNCTIONS =============
+
+    /**
+     * @notice Get the address of the reference token
+     * @return The address of the reference token
+     */
+    function getReferenceToken() public view returns (address) {
+        return referenceToken;
+    }
+
+    /**
+     * @notice Get a specific observation for a token
+     * @param token_ The address of the token
+     * @param index_ The index of the observation to retrieve
+     * @return timestamp The timestamp of the observation
+     * @return price The price at the time of the observation
+     * @return accumulatedPrice The accumulated price for TWAP calculations
+     */
+    function getObservation(address token_, uint256 index_)
+        public
+        view
+        returns (uint40 timestamp, uint216 price, int256 accumulatedPrice)
+    {
+        Observation memory observation = tokenToObservations[token_][index_];
+        return (observation.timestamp, observation.price, observation.accumulatedPrice);
+    }
+
+    /**
+     * @notice Get the geometric mean price of a token over a specified period
+     * @dev Geomean price = ∏(x_i^ΔT_i)^(1/n)
+     *                    = exp(Σ(ΔT_i * ln(price_i)) / n)
+     * @dev Geomean price over a period = exp(accumulatedPrice(timestamp - period) - accumulatedPrice(timestamp)) / observationPeriod_)
+     * @param token_ The address of the token
+     * @param observationPeriod_ The period in seconds over which to calculate the geometric mean
+     * @return The geometric mean price of the token over the specified period
+     */
+    function getGeomeanPrice(address token_, uint256 observationPeriod_)
+        external
+        view
+        returns (uint256)
+    {
+        return getGeomeanPrice(token_, observationPeriod_, 0);
+    }
+
+    /**
+     * @notice Get the geometric mean price of a token over a specified period with a hint
+     * @param token_ The address of the token
+     * @param observationPeriod_ The period in seconds over which to calculate the geometric mean
+     * @param hintLow_ A hint for the binary search to optimize performance
+     * @return The geometric mean price of the token over the specified period
+     */
+    function getGeomeanPrice(address token_, uint256 observationPeriod_, uint256 hintLow_)
+        public
+        view
+        returns (uint256)
+    {
+        Observation[] storage observations = tokenToObservations[token_];
+        Observation storage observationsNow = observations[observations.length - 1];
+        uint256 startPeriodTimestamp_ = block.timestamp - observationPeriod_;
+        Observation storage observationsPeriodStart =
+            observations[_binarySearch(observations, startPeriodTimestamp_, hintLow_)];
+
+        int256 numerator_ = _calculateAccumulatedPrice(observationsNow, block.timestamp)
+            - _calculateAccumulatedPrice(observationsPeriodStart, startPeriodTimestamp_);
+
+        return uint256(wadExp(numerator_ / int256(observationPeriod_)));
+    }
+
+    /**
+     * @notice Get the latest price of a token
+     * @dev THE RETURNED PRICE IS EASY TO MANIPULATE. USE `getGeomeanPrice()` INSTEAD.
+     * @param token_ The address of the token
+     * @return The latest price of the token in units of the reference token
+     */
+    function getLastPrice(address token_) public view returns (uint256) {
+        Observation[] storage observations = tokenToObservations[token_];
+        return observations[observations.length - 1].price; // TODO: scale to reference token decimals
+    }
+
+    // ============= INTERNAL FUNCTIONS =============
+
     /**
      * @notice Calculate the accumulated price based on the previous observation, timestamp and price.
      * @param observation The observation containing timestamp and accumulatedPrice.
      * @param timestamp_ The timestamp for which to calculate the accumulatedPrice.
-     * @return _accumulatedPrice The calculated accumulated price.
+     * @return The calculated accumulated price.
      */
     function _calculateAccumulatedPrice(Observation storage observation, uint256 timestamp_)
         internal
@@ -196,7 +265,16 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
             + (int256(timestamp_ - observation.timestamp)) * wadLn(int216(observation.price)); // Safe cast.
     }
 
-    // Spot price == (x / Wx) / (y / Wy)
+    /**
+     * @notice Updates the price of a token based on the current pool state
+     * @dev Calculates spot price as (x / Wx) / (y / Wy) where x is token balance, Wx is token weight,
+     *      y is reference token balance, and Wy is reference token weight
+     * @param tokenAddress_ The address of the token to update
+     * @param tokenIndex_ The index of the token in the pool
+     * @param tokenWeight_ The normalized weight of the token in the pool
+     * @param lastBalancesWad_ Array of token balances in the pool
+     * @param denominator_ The denominator value calculated from reference token
+     */
     function _updatePrice(
         address tokenAddress_,
         uint256 tokenIndex_,
@@ -234,18 +312,26 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
             // We don't need to update the timestamp because it stays the same within the same block.
         }
 
-        emit WeightedPoolGeomeanOracleHookContractPriceUpdated(tokenAddress_, lastPrice_);
+        emit GeomeanOracleHookContractPriceUpdated(tokenAddress_, lastPrice_);
     }
 
+    /**
+     * @notice Performs a binary search to find the observation closest to the target timestamp
+     * @dev Uses a hint to optimize the search by starting from a specific index
+     * @param observations The array of observations to search through
+     * @param targetTimestamp_ The timestamp to search for
+     * @param hintLow_ A hint for where to start the search (optimization). 0 if you don't have a hint.
+     * @return The index of the observation closest to but not exceeding the target timestamp
+     */
     function _binarySearch(
         Observation[] storage observations,
         uint256 targetTimestamp_,
-        uint256 hintLow_
+        uint256 hintLow_ // TODO what happens if hintLow_ is too high? should revert
     ) internal view returns (uint256) {
         uint256 lastIndex_ = observations.length - 1;
 
         if (observations.length == 0 || targetTimestamp_ <= observations[0].timestamp) {
-            revert WeightedPoolGeomeanOracleHookContract__NOT_ENOUGH_OBSERVATIONS(lastIndex_ + 1);
+            revert GeomeanOracleHookContract__NOT_ENOUGH_OBSERVATIONS(lastIndex_ + 1);
         }
 
         // If target timestamp is after the latest observation, return the latest.
@@ -276,45 +362,5 @@ contract WeightedPoolGeomeanOracleHookContract is BaseHooks, VaultGuard {
         }
 
         return low_;
-    }
-
-    // TODO
-    /// @dev Geomean price = ∏(x_i^ΔT_i)^(1/n)
-    //                     = exp(Σ(ΔT_i * ln(price_i)) / n)
-    //
-    /// @dev Geomean price over a period = exp(accumulatedPrice(timestamp - period) - accumulatedPrice(timestamp)) / observationPeriod_)
-    //
-    function getGeomeanPrice(address token_, uint256 observationPeriod_)
-        external
-        view
-        returns (uint256)
-    {
-        return getGeomeanPrice(token_, observationPeriod_, 0);
-    }
-
-    function getGeomeanPrice(address token_, uint256 observationPeriod_, uint256 hintLow_)
-        public
-        view
-        returns (uint256)
-    {
-        Observation[] storage observations = tokenToObservations[token_];
-        Observation storage observationsNow = observations[observations.length - 1];
-        uint256 startPeriodTimestamp_ = block.timestamp - observationPeriod_;
-        Observation storage observationsPeriodStart =
-            observations[_binarySearch(observations, startPeriodTimestamp_, hintLow_)];
-
-        int256 numerator_ = _calculateAccumulatedPrice(observationsNow, block.timestamp)
-            - _calculateAccumulatedPrice(observationsPeriodStart, startPeriodTimestamp_);
-
-        return uint256(wadExp(numerator_ / int256(observationPeriod_)));
-    }
-
-    /**
-     * @notice Get the price of the pool.
-     * @param token_ The address of the token to get the price of.
-     * @return _price The price of the pool in units of the reference token.
-     */
-    function getPrice(address token_) public view returns (uint256) {
-        return tokenToObservations[token_][tokenToObservations[token_].length - 1].price; // TODO: scale to reference token decimals
     }
 }
