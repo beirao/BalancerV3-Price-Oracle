@@ -12,12 +12,12 @@ interface IGeomeanOracleHookContract {
     /**
      * @notice Observation structure to store price data points
      * @param timestamp The timestamp when the observation was recorded
-     * @param price The price at the time of the observation
+     * @param scaled18Price The price at the time of the observation in WAD
      * @param accumulatedPrice The accumulated price for TWAP calculations
      */
     struct Observation {
         uint40 timestamp;
-        uint216 price;
+        uint216 scaled18Price;
         int256 accumulatedPrice;
     }
 
@@ -46,6 +46,16 @@ interface IGeomeanOracleHookContract {
      * @param price The updated price
      */
     event GeomeanOracleHookContractPriceUpdated(address indexed token, uint256 price);
+
+    /**
+     * @notice Emitted when a Chainlink price feed adaptor is created
+     * @param token The address of the token
+     * @param observationPeriod The observation period
+     * @param chainlinkAggregator The address of the Chainlink aggregator
+     */
+    event GeomeanOracleHookContractChainlinkPriceFeedAdaptorCreated(
+        address indexed token, uint256 observationPeriod, address chainlinkAggregator
+    );
 
     // ============= ERRORS =============
 
@@ -77,14 +87,36 @@ interface IGeomeanOracleHookContract {
      */
     error GeomeanOracleHookContract__NOT_ENOUGH_OBSERVATIONS(uint256 numberOfObservations);
 
+    /**
+     * @notice Error thrown when the token is the reference token
+     */
+    error GeomeanOracleHookContract__TOKEN_IS_REFERENCE_TOKEN();
+
+    /**
+     * @notice Error thrown when the token is not included in the pool
+     */
+    error GeomeanOracleHookContract__TOKEN_NOT_INCLUDED_IN_THE_POOL();
+
     // ============= VIEW FUNCTIONS =============
 
     function getReferenceToken() external view returns (address);
+
+    function getReferenceTokenDecimals() external view returns (uint8);
 
     function getObservation(address token, uint256 index)
         external
         view
         returns (uint40 timestamp, uint216 price, int256 accumulatedPrice);
+
+    function getLatestObservation(address token)
+        external
+        view
+        returns (
+            uint40 timestamp,
+            uint216 price,
+            int256 accumulatedPrice,
+            uint256 numberOfObservations
+        );
 
     function getGeomeanPrice(address token, uint256 observationPeriod)
         external
