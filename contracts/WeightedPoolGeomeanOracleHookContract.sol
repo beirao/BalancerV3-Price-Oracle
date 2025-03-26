@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-// TODO: Remove this
-import "forge-std/console2.sol";
-
+/// OpenZeppelin imports.
 import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
+
+/// Solmate imports.
+import {FixedPointMathLib} from "lib/solmate/src/utils/FixedPointMathLib.sol";
+import {wadExp, wadLn} from "lib/solmate/src/utils/SignedWadMath.sol";
+import {SafeCastLib} from "lib/solmate/src/utils/SafeCastLib.sol";
+
+/// Balancer V3 imports.
 import {IVault} from "lib/balancer-v3-monorepo/pkg/interfaces/contracts/vault/IVault.sol";
 import {VaultGuard} from "lib/balancer-v3-monorepo/pkg/vault/contracts/VaultGuard.sol";
 import {BaseHooks} from "lib/balancer-v3-monorepo/pkg/vault/contracts/BaseHooks.sol";
@@ -20,9 +25,8 @@ import {BasePoolFactory} from
 import {WeightedPoolImmutableData} from
     "lib/balancer-v3-monorepo/pkg/interfaces/contracts/pool-weighted/IWeightedPool.sol";
 import {WeightedPool} from "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts/WeightedPool.sol";
-import "lib/solmate/src/utils/FixedPointMathLib.sol";
-import "lib/solmate/src/utils/SignedWadMath.sol";
-import "lib/solmate/src/utils/SafeCastLib.sol";
+
+/// Project imports.
 import {IGeomeanOracleHookContract} from "./interfaces/IGeomeanOracleHookContract.sol";
 import {ChainlinkPriceFeedAdaptor} from "./ChainlinkPriceFeedAdaptor.sol";
 
@@ -35,9 +39,15 @@ contract WeightedPoolGeomeanOracleHookContract is
     using SafeCastLib for uint256;
 
     /// @notice The number of decimals in the WAD (18).
-    uint256 internal constant WAD = 18;
+    uint256 internal constant WAD_DECIMALS = 18;
 
-    /// @notice Mapping from token address to its metadata
+    /// @notice The maximum observation period.
+    uint256 public constant MAX_OBSERVATION_PERIOD = 30 days;
+
+    /// @notice The minimum observation period.
+    uint256 public constant MIN_OBSERVATION_PERIOD = 0;
+
+    /// @notice Mapping from token address to its metadata.
     mapping(address => TokenData) internal tokenToData;
 
     /// @notice Mapping from token address to its price observations history.
@@ -188,12 +198,23 @@ contract WeightedPoolGeomeanOracleHookContract is
             revert GeomeanOracleHookContract__TOKEN_NOT_INCLUDED_IN_THE_POOL();
         }
 
+        // Check the observation period is between the minimum and maximum allowed.
+        if (
+            _observationPeriod > MAX_OBSERVATION_PERIOD
+                || _observationPeriod < MIN_OBSERVATION_PERIOD
+        ) {
+            revert GeomeanOracleHookContract__WRONG_OBSERVATION_PERIOD();
+        }
+
         emit GeomeanOracleHookContractChainlinkPriceFeedAdaptorCreated(
             _token, _observationPeriod, _chainlinkAggregator
         );
 
-        return
-            address(new ChainlinkPriceFeedAdaptor(_token, _observationPeriod, _chainlinkAggregator));
+        return address(
+            new ChainlinkPriceFeedAdaptor(
+                _token, address(this), _observationPeriod, _chainlinkAggregator
+            )
+        );
     }
 
     // ============= VIEW FUNCTIONS =============
@@ -216,12 +237,12 @@ contract WeightedPoolGeomeanOracleHookContract is
     }
 
     /**
-     * @notice Get a specific observation for a token
-     * @param _token The address of the token
+     * @notice Get a specific observation for a token.
+     * @param _token The address of the token.
      * @param _index The index of the observation to retrieve.
-     * @return timestamp_ The timestamp of the observation
+     * @return timestamp_ The timestamp of the observation.
      * @return scaled18Price_ The scaled to 18 decimals price at the time of the observation.
-     * @return accumulatedPrice_ The accumulated price for TWAP calculations
+     * @return accumulatedPrice_ The accumulated price for TWAP calculations.
      */
     function getObservation(address _token, uint256 _index)
         external
@@ -233,12 +254,12 @@ contract WeightedPoolGeomeanOracleHookContract is
     }
 
     /**
-     * @notice Get the latest observation for a token
-     * @param _token The address of the token
-     * @return timestamp_ The timestamp of the observation
+     * @notice Get the latest observation for a token.
+     * @param _token The address of the token.
+     * @return timestamp_ The timestamp of the observation.
      * @return scaled18Price_ The scaled to 18 decimals price at the time of the observation.
-     * @return accumulatedPrice_ The accumulated price for TWAP calculations
-     * @return numberOfObservations_ The number of observations
+     * @return accumulatedPrice_ The accumulated price for TWAP calculations.
+     * @return numberOfObservations_ The number of observations.
      */
     function getLatestObservation(address _token)
         external
@@ -257,13 +278,13 @@ contract WeightedPoolGeomeanOracleHookContract is
     }
 
     /**
-     * @notice Get the geometric mean price of a token over a specified period
+     * @notice Get the geometric mean price of a token over a specified period.
      * @dev Geomean price = ∏(x_i^ΔT_i)^(1/n)
      *                    = exp(Σ(ΔT_i * ln(price_i)) / n)
      * @dev Geomean price over a period = exp(accumulatedPrice(timestamp - period) - accumulatedPrice(timestamp)) / observationPeriod_)
-     * @param _token The address of the token
-     * @param observationPeriod_ The period in seconds over which to calculate the geometric mean
-     * @return geomeanPrice_ The geometric mean price of the token over the specified period
+     * @param _token The address of the token.
+     * @param observationPeriod_ The period in seconds over which to calculate the geometric mean.
+     * @return geomeanPrice_ The geometric mean price of the token over the specified period.
      */
     function getGeomeanPrice(address _token, uint256 observationPeriod_)
         external
@@ -274,17 +295,25 @@ contract WeightedPoolGeomeanOracleHookContract is
     }
 
     /**
-     * @notice Get the geometric mean price of a token over a specified period with a hint
-     * @param _token The address of the token
-     * @param _observationPeriod The period in seconds over which to calculate the geometric mean
-     * @param _hintLow A hint for the binary search to optimize performance
-     * @return geomeanPrice_ The geometric mean price of the token over the specified period
+     * @notice Get the geometric mean price of a token over a specified period with a hint.
+     * @param _token The address of the token.
+     * @param _observationPeriod The period in seconds over which to calculate the geometric mean.
+     * @param _hintLow A hint for the binary search to optimize performance.
+     * @return geomeanPrice_ The geometric mean price of the token over the specified period.
      */
     function getGeomeanPrice(address _token, uint256 _observationPeriod, uint256 _hintLow)
         public
         view
         returns (uint256)
     {
+        // Check the observation period is between the minimum and maximum allowed.
+        if (
+            _observationPeriod > MAX_OBSERVATION_PERIOD
+                || _observationPeriod < MIN_OBSERVATION_PERIOD
+        ) {
+            revert GeomeanOracleHookContract__WRONG_OBSERVATION_PERIOD();
+        }
+
         Observation[] storage observations = tokenToObservations[_token];
         Observation storage observationsNow = observations[observations.length - 1];
         uint256 startPeriodTimestamp_ = block.timestamp - _observationPeriod;
@@ -298,10 +327,10 @@ contract WeightedPoolGeomeanOracleHookContract is
     }
 
     /**
-     * @notice Get the latest price of a token
+     * @notice Get the latest price of a token.
      * @dev THE RETURNED PRICE IS EASY TO MANIPULATE. USE `getGeomeanPrice()` INSTEAD.
-     * @param _token The address of the token
-     * @return latestPrice_ The latest price of the token in units of the reference token
+     * @param _token The address of the token.
+     * @return latestPrice_ The latest price of the token in units of the reference token.
      */
     function getLastPrice(address _token) external view returns (uint256) {
         Observation[] storage observations = tokenToObservations[_token];
@@ -311,16 +340,16 @@ contract WeightedPoolGeomeanOracleHookContract is
     // ============= INTERNAL FUNCTIONS =============
 
     /**
-     * @notice Converts a price from 18 decimals to the reference token's decimal precision
-     * @param _scaled18Price The price in 18 decimal (WAD) format
-     * @return The price adjusted to the reference token's decimal precision
+     * @notice Converts a price from 18 decimals to the reference token's decimal precision.
+     * @param _scaled18Price The price in 18 decimal (WAD) format.
+     * @return The price adjusted to the reference token's decimal precision.
      */
     function _unscalePrice(uint256 _scaled18Price) internal view returns (uint256) {
         uint8 referenceTokenDecimals_ = ERC20(referenceToken).decimals();
-        if (referenceTokenDecimals_ >= WAD) {
-            return _scaled18Price * 10 ** (referenceTokenDecimals_ - WAD);
+        if (referenceTokenDecimals_ >= WAD_DECIMALS) {
+            return _scaled18Price * 10 ** (referenceTokenDecimals_ - WAD_DECIMALS);
         } else {
-            return _scaled18Price / 10 ** (WAD - referenceTokenDecimals_);
+            return _scaled18Price / 10 ** (WAD_DECIMALS - referenceTokenDecimals_);
         }
     }
 
@@ -340,14 +369,14 @@ contract WeightedPoolGeomeanOracleHookContract is
     }
 
     /**
-     * @notice Updates the price of a token based on the current pool state
+     * @notice Updates the price of a token based on the current pool state.
      * @dev Calculates spot price as (x / Wx) / (y / Wy) where x is token balance, Wx is token weight,
-     *      y is reference token balance, and Wy is reference token weight
-     * @param _tokenAddress The address of the token to update
-     * @param _tokenIndex The index of the token in the pool
-     * @param _tokenWeight The normalized weight of the token in the pool
-     * @param _lastBalancesWad Array of token balances in the pool
-     * @param _denominator The denominator value calculated from reference token
+     *      y is reference token balance, and Wy is reference token weight.
+     * @param _tokenAddress The address of the token to update.
+     * @param _tokenIndex The index of the token in the pool.
+     * @param _tokenWeight The normalized weight of the token in the pool.
+     * @param _lastBalancesWad Array of token balances in the pool.
+     * @param _denominator The denominator value calculated from reference token.
      */
     function _updatePrice(
         address _tokenAddress,
@@ -390,17 +419,17 @@ contract WeightedPoolGeomeanOracleHookContract is
     }
 
     /**
-     * @notice Performs a binary search to find the observation closest to the target timestamp
-     * @dev Uses a hint to optimize the search by starting from a specific index
-     * @param observations The array of observations to search through
-     * @param _targetTimestamp The timestamp to search for
+     * @notice Performs a binary search to find the observation closest to the target timestamp.
+     * @dev Uses a hint to optimize the search by starting from a specific index.
+     * @param observations The array of observations to search through.
+     * @param _targetTimestamp The timestamp to search for.
      * @param _hintLow A hint for where to start the search (optimization). 0 if you don't have a hint.
-     * @return index_ The index of the observation closest to but not exceeding the target timestamp
+     * @return index_ The index of the observation closest to but not exceeding the target timestamp.
      */
     function _binarySearch(
         Observation[] storage observations,
         uint256 _targetTimestamp,
-        uint256 _hintLow // TODO what happens if _hintLow is too high? should revert
+        uint256 _hintLow // TODO what happens if _hintLow is too high? should revert?
     ) internal view returns (uint256) {
         uint256 lastIndex_ = observations.length - 1;
 
