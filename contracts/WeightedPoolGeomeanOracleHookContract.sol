@@ -45,7 +45,7 @@ contract WeightedPoolGeomeanOracleHookContract is
     uint256 public constant MAX_OBSERVATION_PERIOD = 30 days;
 
     /// @notice The minimum observation period.
-    uint256 public constant MIN_OBSERVATION_PERIOD = 0;
+    uint256 public constant MIN_OBSERVATION_PERIOD = 0; // TODO
 
     /// @notice Mapping from token address to its metadata.
     mapping(address => TokenData) internal tokenToData;
@@ -54,7 +54,7 @@ contract WeightedPoolGeomeanOracleHookContract is
     mapping(address => Observation[]) internal tokenToObservations;
 
     /// @notice Address of the factory allowed to create pools with this hook.
-    address internal immutable allowedFactory; //? useless since we can only register once?
+    address internal immutable allowedFactory; // TODO useless since we can only register once?
 
     /// @notice Address of the token used as reference for price calculations.
     address internal immutable referenceToken;

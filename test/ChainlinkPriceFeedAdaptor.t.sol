@@ -58,9 +58,7 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
         _performSwapsToGeneratePriceData();
 
         // 1 USDC = 1 USD
-        mockChainlinkAggregatorUsdcUsd = new MockChainlinkAggregator(
-        8, "USDC / USD", 1e8
-        );
+        mockChainlinkAggregatorUsdcUsd = new MockChainlinkAggregator(8, "USDC / USD", 1e8);
 
         // Deploy the ChainlinkPriceFeedAdaptor for USDT
         adaptorUsdt = ChainlinkPriceFeedAdaptor(
@@ -85,9 +83,7 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
         assertEq(adaptorUsdt.token(), address(usdt), "Token address mismatch");
         assertEq(adaptorUsdt.observationPeriod(), OBSERVATION_PERIOD, "Observation period mismatch");
         assertEq(
-            address(adaptorUsdt.chainlinkAggregator()),
-            address(0),
-            "Chainlink aggregator mismatch"
+            address(adaptorUsdt.chainlinkAggregator()), address(0), "Chainlink aggregator mismatch"
         );
     }
 
@@ -209,7 +205,7 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
 
     function _swapToken1ToToken2(uint256 amount, uint256 skip) public {
         _updateTimestamp(skip);
-        
+
         // Get initial balances
         uint256 initialUsdtBalance = usdt.balanceOf(address(userC));
         uint256 initialUsdcBalance = usdc.balanceOf(address(userC));
