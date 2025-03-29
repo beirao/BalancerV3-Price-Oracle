@@ -52,11 +52,15 @@ contract TestTwapBal is Test, Sort, Constants {
     uint256 public forkIdEth;
     uint256 public forkIdPolygon;
 
+    uint256 public virtualTimestamp;
+
     TRouter public router;
 
     function setUp() public virtual {
         string memory MAINNET_RPC_URL = vm.envString("MAINNET_RPC_URL");
-        forkIdEth = vm.createFork(MAINNET_RPC_URL);
+        forkIdEth = vm.createFork(MAINNET_RPC_URL, 22146767);
+
+        virtualTimestamp = block.timestamp;
 
         vm.deal(userA, INITIAL_ETH_MINT);
         vm.deal(userB, INITIAL_ETH_MINT);
@@ -89,6 +93,12 @@ contract TestTwapBal is Test, Sort, Constants {
             usdt.approve(address(router), type(uint256).max);
             vm.stopPrank();
         }
+    }
+
+    function _updateTimestamp(uint256 _skip) internal {
+        uint256 t = block.timestamp;
+        vm.warp(t + _skip);
+        vm.roll(t + _skip / 12);
     }
 
     function createStablePool(

@@ -7,17 +7,17 @@ pragma solidity 0.8.26;
  */
 contract MockChainlinkAggregator {
     // Configuration
-    uint8 private _decimals;
-    string private _description;
-    uint256 private _version;
+    uint8 private dec;
+    string private des;
+    uint256 private ver;
 
     // Current price data
-    int256 private _answer;
-    uint256 private _timestamp;
-    uint256 private _roundId;
+    int256 private answer;
+    uint256 private timestamp;
+    uint256 private roundId;
 
     // Historical data mapping
-    mapping(uint256 => RoundData) private _roundData;
+    mapping(uint256 => RoundData) private roundData;
 
     struct RoundData {
         int256 answer;
@@ -34,21 +34,29 @@ contract MockChainlinkAggregator {
      * @param initialAnswer_ Initial price answer
      */
     constructor(uint8 decimals_, string memory description_, int256 initialAnswer_) {
-        _decimals = decimals_;
-        _description = description_;
-        _version = 1;
-        _answer = initialAnswer_;
-        _timestamp = block.timestamp;
-        _roundId = 1;
+        dec = decimals_;
+        des = description_;
+        ver = 1;
+        answer = initialAnswer_;
+        timestamp = block.timestamp;
+        roundId = 1;
 
         // Set initial round data
-        _roundData[_roundId] = RoundData({
+        roundData[roundId] = RoundData({
             answer: initialAnswer_,
             startedAt: block.timestamp - 60, // 1 minute ago
             updatedAt: block.timestamp,
-            answeredInRound: uint80(_roundId),
+            answeredInRound: uint80(roundId),
             exists: true
         });
+    }
+
+    function description() external view returns (string memory) {
+        return des;
+    }
+
+    function version() external view returns (uint256) {
+        return ver;
     }
 
     /**
@@ -56,26 +64,26 @@ contract MockChainlinkAggregator {
      * @param answer New price answer
      */
     function updateAnswer(int256 answer) external {
-        _answer = answer;
-        _timestamp = block.timestamp;
-        _roundId++;
+        answer = answer;
+        timestamp = block.timestamp;
+        roundId++;
 
         // Update round data
-        _roundData[_roundId] = RoundData({
+        roundData[roundId] = RoundData({
             answer: answer,
             startedAt: block.timestamp - 10, // 10 seconds ago
             updatedAt: block.timestamp,
-            answeredInRound: uint80(_roundId),
+            answeredInRound: uint80(roundId),
             exists: true
         });
     }
 
     function latestAnswer() external view returns (int256) {
-        return _answer;
+        return answer;
     }
 
     function decimals() external view returns (uint8) {
-        return _decimals;
+        return dec;
     }
 
     function latestRoundData()
@@ -89,7 +97,7 @@ contract MockChainlinkAggregator {
             uint80 answeredInRound
         )
     {
-        RoundData memory data = _roundData[_roundId];
-        return (uint80(_roundId), data.answer, data.startedAt, data.updatedAt, data.answeredInRound);
+        RoundData memory data = roundData[roundId];
+        return (uint80(roundId), data.answer, data.startedAt, data.updatedAt, data.answeredInRound);
     }
 }
