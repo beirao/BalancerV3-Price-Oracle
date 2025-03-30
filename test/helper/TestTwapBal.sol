@@ -56,11 +56,17 @@ contract TestTwapBal is Test, Sort, Constants {
 
     TRouter public router;
 
+    uint256 public constant BLOCK_NUMBER_ETH_MAINNET = 22146768;
+
     function setUp() public virtual {
         string memory MAINNET_RPC_URL = vm.envString("MAINNET_RPC_URL");
-        forkIdEth = vm.createFork(MAINNET_RPC_URL, 22146767);
+        forkIdEth = vm.createFork(MAINNET_RPC_URL, BLOCK_NUMBER_ETH_MAINNET);
+        vm.selectFork(forkIdEth);
 
         virtualTimestamp = block.timestamp;
+
+        vm.warp(virtualTimestamp / 12 * 12);
+        vm.roll(virtualTimestamp / 12);
 
         vm.deal(userA, INITIAL_ETH_MINT);
         vm.deal(userB, INITIAL_ETH_MINT);
@@ -95,10 +101,12 @@ contract TestTwapBal is Test, Sort, Constants {
         }
     }
 
+    /// @dev simulate ethereum blocks. 12 seconds per block and block.timestamp is updated every 12 seconds
+    ///      and stays the same for the duration of the block.
     function _updateTimestamp(uint256 _skip) internal {
-        uint256 t = block.timestamp;
-        vm.warp(t + _skip);
-        vm.roll(t + _skip / 12);
+        virtualTimestamp += _skip;
+        vm.warp(virtualTimestamp / 12 * 12);
+        vm.roll(virtualTimestamp / 12);
     }
 
     function createStablePool(

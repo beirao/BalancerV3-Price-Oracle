@@ -16,7 +16,6 @@ contract WeightedOracle is TestTwapBal {
 
     function setUp() public override {
         super.setUp();
-        vm.selectFork(forkIdEth);
 
         IERC20[] memory assetsTemp = new IERC20[](2);
         assetsTemp[0] = usdt;
@@ -131,19 +130,47 @@ contract WeightedOracle is TestTwapBal {
             lastPrice = price;
         }
     }
+
+    function test_priceManipulation() public {
+        _performSwapsToGeneratePriceData();
+
+        uint256 lastPrice = hookOracleContract.getGeomeanPrice(address(usdt), 1 hours);
+
+        console2.log("getGeomeanPrice ::: %18e", lastPrice);
+        console2.log("getLastPrice    ::: %18e", hookOracleContract.getLastPrice(address(usdt)));
+
+        // starting price: 1.254418132319424722
+        for (uint256 i = 0; i < 30; i++) {
+            _swapToken1ToToken2(300_000e18, 1); // n = 1
+        }
+        // price after manipulation: 102.412534237823477104
+        _updateTimestamp(48); // 5 block manipulation on eth mainnet
+        console2.log(
+            "getGeomeanPrice ::: %18e", hookOracleContract.getGeomeanPrice(address(usdt), 1 hours)
+        );
+        console2.log("getLastPrice ::: %18e", hookOracleContract.getLastPrice(address(usdt)));
+
+        assertApproxEqRel(
+            lastPrice, hookOracleContract.getGeomeanPrice(address(usdt), 1 hours), 0.08e18
+        ); // less than 8%
+    }
+
     /// -------- Helpers --------- ///
 
     function _performSwapsToGeneratePriceData() internal {
-        _swapToken1ToToken2(10_000e18, 100); // n = 1
-        _swapToken1ToToken2(1e18, 100); // n = 2
-        _swapToken1ToToken2(10_000e18, 100); // n = 3
-        _swapToken1ToToken2(1e18, 100); // n = 4
-        _swapToken1ToToken2(1e10, 100); // n = 5
-        _swapToken1ToToken2(100000e18, 100); // n = 5
-        _swapToken1ToToken2(1e18, 5); // n = 5
-        _swapToken1ToToken2(1e18, 1); // n = 5
-        _swapToken1ToToken2(1e18, 1); // n = 5
-        _swapToken1ToToken2(1e18, 100); // n = 4
+        _swapToken1ToToken2(10_000e18, 10 minutes);
+        _swapToken1ToToken2(1e18, 10 minutes);
+        _swapToken1ToToken2(10_000e18, 10 minutes);
+        _swapToken1ToToken2(1e18, 10 minutes);
+        _swapToken1ToToken2(1e18, 5);
+        _swapToken1ToToken2(1e18, 10 minutes);
+        _swapToken1ToToken2(1e18, 5);
+        _swapToken1ToToken2(1e10, 10 minutes);
+        _swapToken1ToToken2(100000e18, 10 minutes);
+        _swapToken1ToToken2(1e18, 5);
+        _swapToken1ToToken2(1e18, 1);
+        _swapToken1ToToken2(1e18, 1);
+        _swapToken1ToToken2(1e18, 10 minutes);
     }
 
     function _swapToken1ToToken2(uint256 amount, uint256 skip) public {
@@ -176,10 +203,10 @@ contract WeightedOracle is TestTwapBal {
         );
         assertTrue(finalUsdcBalance > initialUsdcBalance, "USDC balance did not increase");
 
-        console2.log("");
-        console2.log(
-            "Price (in/out) ::: %18e", amount * 1e18 / (finalUsdcBalance - initialUsdcBalance)
-        );
+        // console2.log("");
+        // console2.log(
+        //     "Price (in/out) ::: %18e", amount * 1e18 / (finalUsdcBalance - initialUsdcBalance)
+        // );
     }
 
     function _swapToken2ToToken1(uint256 amount, uint256 skip) public {
