@@ -170,10 +170,12 @@ contract TestTwapBal is Test, Sort, Constants {
         return (address(pool));
     }
 
-    function createWeightedPool(IERC20[] memory assets, address poolHookContract, address admin)
-        public
-        returns (address)
-    {
+    function createWeightedPool(
+        IERC20[] memory assets,
+        uint256[] memory normalizedWeights,
+        address poolHookContract,
+        address admin
+    ) public returns (address) {
         // sort tokens
         IERC20[] memory tokens = new IERC20[](assets.length);
 
@@ -193,12 +195,14 @@ contract TestTwapBal is Test, Sort, Constants {
         roleAccounts.swapFeeManager = admin;
         roleAccounts.poolCreator = address(0);
 
-        uint256[] memory normalizedWeights = new uint256[](assets.length);
-        for (uint256 i = 0; i < assets.length; i++) {
-            normalizedWeights[i] = 1e18 / assets.length;
-        }
-        if (assets.length % 2 == 1) {
-            normalizedWeights[2] += 1;
+        if (normalizedWeights.length == 0) {
+            normalizedWeights = new uint256[](assets.length);
+            for (uint256 i = 0; i < assets.length; i++) {
+                normalizedWeights[i] = 1e18 / assets.length;
+            }
+            if (assets.length % 2 == 1) {
+                normalizedWeights[2] += 1;
+            }
         }
 
         address pool = address(
@@ -217,24 +221,6 @@ contract TestTwapBal is Test, Sort, Constants {
         );
 
         return (address(pool));
-    }
-
-    function _performSwapsToGeneratePriceData(
-        address _pool,
-        WeightedPoolGeomeanOracleHookContract _hookOracleContract
-    ) internal {
-        _swap(_pool, _hookOracleContract, usdt, usdc, 10_000e18, 10 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 10_000e18, 10 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 50 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 5 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e15, 10 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 100000e18, 10 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 5);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 1);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 1);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
     }
 
     function _swap(
@@ -282,18 +268,38 @@ contract TestTwapBal is Test, Sort, Constants {
         // if _amount swapped is small enough then the price ratio (amtIn/amtOut) should be close
         // to the price from the oracle formula.
         if (_amount <= 50e18) {
-            if (referenceToken == _tokenIn) {
-                assertApproxEqRel(
-                    (finalTokenOutBalance - initialTokenOutBalance) * 1e18 / _amount,
-                    _hookOracleContract.getLastPrice(address(_tokenOut)),
-                    0.0001e18
-                ); // 0.01% tolerance
+            if (referenceToken == _tokenIn || referenceToken == _tokenOut) {
+                if (referenceToken == _tokenIn) {
+                    assertApproxEqRel(
+                        (finalTokenOutBalance - initialTokenOutBalance) * 1e18 / _amount,
+                        _hookOracleContract.getLastPrice(address(_tokenOut)),
+                        0.0001e18
+                    ); // 0.1% tolerance
+                } else {
+                    assertApproxEqRel(
+                        _amount * 1e18 / (finalTokenOutBalance - initialTokenOutBalance),
+                        _hookOracleContract.getLastPrice(address(_tokenIn)),
+                        0.0001e18
+                    ); // 0.1% tolerance
+                }
             } else {
-                assertApproxEqRel(
-                    _amount * 1e18 / (finalTokenOutBalance - initialTokenOutBalance),
-                    _hookOracleContract.getLastPrice(address(_tokenIn)),
-                    0.0001e18
-                ); // 0.01% tolerance
+                // Swap a small amount to assert that the price is correct.
+                _swap(
+                    _pool,
+                    _hookOracleContract,
+                    referenceToken,
+                    _tokenOut,
+                    10 ** ERC20Mock(address(referenceToken)).decimals() / 100,
+                    0
+                );
+                _swap(
+                    _pool,
+                    _hookOracleContract,
+                    referenceToken,
+                    _tokenIn,
+                    10 ** ERC20Mock(address(referenceToken)).decimals() / 100,
+                    0
+                );
             }
         }
 

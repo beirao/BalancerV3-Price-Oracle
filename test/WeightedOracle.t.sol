@@ -32,7 +32,9 @@ contract WeightedOracle is TestTwapBal {
             address(vaultV3), address(weightedPoolFactory), address(referenceToken)
         );
 
-        pool = WeightedPool(createWeightedPool(assets, address(hookOracleContract), address(this)));
+        pool = WeightedPool(
+            createWeightedPool(assets, new uint256[](0), address(hookOracleContract), address(this))
+        );
 
         uint256[] memory amountsToAdd = new uint256[](assets.length);
         amountsToAdd[0] = 1_000_000e18;
@@ -161,5 +163,23 @@ contract WeightedOracle is TestTwapBal {
 
         _swap(address(pool), hookOracleContract, usdc, usdt, _amountIn, _skipIn);
         _swap(address(pool), hookOracleContract, usdt, usdc, _amountOut, _skipOut);
+    }
+
+    function _performSwapsToGeneratePriceData(
+        address _pool,
+        WeightedPoolGeomeanOracleHookContract _hookOracleContract
+    ) internal {
+        _swap(_pool, _hookOracleContract, usdt, usdc, 10_000e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 10_000e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 50 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 5 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e15, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 100000e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 5);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 1);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 1);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
     }
 }
