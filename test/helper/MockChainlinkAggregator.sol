@@ -61,16 +61,16 @@ contract MockChainlinkAggregator {
 
     /**
      * @notice Updates the current price
-     * @param answer New price answer
+     * @param _answer New price answer
      */
-    function updateAnswer(int256 answer) external {
-        answer = answer;
+    function updateAnswer(int256 _answer) external {
+        answer = _answer;
         timestamp = block.timestamp;
         roundId++;
 
         // Update round data
         roundData[roundId] = RoundData({
-            answer: answer,
+            answer: _answer,
             startedAt: block.timestamp - 10, // 10 seconds ago
             updatedAt: block.timestamp,
             answeredInRound: uint80(roundId),

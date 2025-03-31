@@ -18,8 +18,8 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
     WeightedPool public pool;
     IERC20[] public assets;
     WeightedPoolGeomeanOracleHookContract public hookOracleContract;
-    ChainlinkPriceFeedAdaptor public adaptorUsdt;
-    ChainlinkPriceFeedAdaptor public adaptorUsdtWithCL;
+    ChainlinkPriceFeedAdaptor public adaptorWeth;
+    ChainlinkPriceFeedAdaptor public adaptorWethWithCL;
     MockChainlinkAggregator public mockChainlinkAggregatorUsdcUsd;
 
     // Constants for our tests
@@ -30,8 +30,8 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
         vm.selectFork(forkIdEth);
 
         IERC20[] memory assetsTemp = new IERC20[](2);
-        assetsTemp[0] = usdt;
-        assetsTemp[1] = usdc;
+        assetsTemp[0] = usdc;
+        assetsTemp[1] = weth;
 
         assets = sort(assetsTemp);
 
@@ -49,8 +49,8 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
         );
 
         uint256[] memory amountsToAdd = new uint256[](assets.length);
-        amountsToAdd[0] = 1_000_000e18;
-        amountsToAdd[1] = 1_000_000e18;
+        amountsToAdd[0] = 1_000_000e18; // usdc
+        amountsToAdd[1] = 1_000e18; // weth
 
         vm.prank(userA);
         router.initialize(address(pool), assets, amountsToAdd);
@@ -62,17 +62,17 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
         // 1 USDC = 1 USD
         mockChainlinkAggregatorUsdcUsd = new MockChainlinkAggregator(8, "USDC / USD", 1e8);
 
-        // Deploy the ChainlinkPriceFeedAdaptor for USDT
-        adaptorUsdt = ChainlinkPriceFeedAdaptor(
+        // Deploy the ChainlinkPriceFeedAdaptor for Weth
+        adaptorWeth = ChainlinkPriceFeedAdaptor(
             hookOracleContract.createChainlinkPriceFeedAdaptor(
-                address(usdt), OBSERVATION_PERIOD, address(0)
+                address(weth), OBSERVATION_PERIOD, address(0)
             )
         );
 
-        // USDT / USDC / USD
-        adaptorUsdtWithCL = ChainlinkPriceFeedAdaptor(
+        // WETH / USDC / USD
+        adaptorWethWithCL = ChainlinkPriceFeedAdaptor(
             hookOracleContract.createChainlinkPriceFeedAdaptor(
-                address(usdt), OBSERVATION_PERIOD, address(mockChainlinkAggregatorUsdcUsd)
+                address(weth), OBSERVATION_PERIOD, address(mockChainlinkAggregatorUsdcUsd)
             )
         );
     }
@@ -80,46 +80,46 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
     function test_adaptorDeployment() public view {
         // Verify the adaptor was deployed correctly
         assertEq(
-            address(adaptorUsdt.oracle()), address(hookOracleContract), "Oracle address mismatch"
+            address(adaptorWeth.oracle()), address(hookOracleContract), "Oracle address mismatch"
         );
-        assertEq(adaptorUsdt.token(), address(usdt), "Token address mismatch");
-        assertEq(adaptorUsdt.observationPeriod(), OBSERVATION_PERIOD, "Observation period mismatch");
+        assertEq(adaptorWeth.token(), address(weth), "Token address mismatch");
+        assertEq(adaptorWeth.observationPeriod(), OBSERVATION_PERIOD, "Observation period mismatch");
         assertEq(
-            address(adaptorUsdt.chainlinkAggregator()), address(0), "Chainlink aggregator mismatch"
+            address(adaptorWeth.chainlinkAggregator()), address(0), "Chainlink aggregator mismatch"
         );
     }
 
     function test_decimals() public view {
         // Reference token (USDC) decimals
         uint8 expectedDecimals = ERC20(address(usdc)).decimals();
-        assertEq(adaptorUsdt.decimals(), expectedDecimals, "Decimals mismatch");
+        assertEq(adaptorWeth.decimals(), expectedDecimals, "Decimals mismatch");
     }
 
     function test_description() public view {
         // Description should be "TOKEN/REFERENCE_TOKEN"
         string memory expectedDescription =
-            string.concat(ERC20(address(usdt)).symbol(), " / ", ERC20(address(usdc)).symbol());
-        assertEq(adaptorUsdt.description(), expectedDescription, "Description mismatch");
+            string.concat(ERC20(address(weth)).symbol(), " / ", ERC20(address(usdc)).symbol());
+        assertEq(adaptorWeth.description(), expectedDescription, "Description mismatch");
     }
 
     function test_latestAnswer() public view {
         // Should return the geomean price from the oracle
-        int256 price = adaptorUsdt.latestAnswer();
+        int256 price = adaptorWeth.latestAnswer();
         assertTrue(price > 0, "Price should be positive");
 
         // Compare with oracle's geomean price
-        uint256 oraclePrice = hookOracleContract.getGeomeanPrice(address(usdt), OBSERVATION_PERIOD);
+        uint256 oraclePrice = hookOracleContract.getGeomeanPrice(address(weth), OBSERVATION_PERIOD);
         assertEq(uint256(price), oraclePrice, "Price mismatch with oracle");
     }
 
     function test_latestTimestamp() public view {
         // Should return the current block timestamp
-        assertEq(adaptorUsdt.latestTimestamp(), block.timestamp, "Timestamp mismatch");
+        assertEq(adaptorWeth.latestTimestamp(), block.timestamp, "Timestamp mismatch");
     }
 
     function test_latestRound() public view {
         // Should return the current block timestamp as the round ID
-        assertEq(adaptorUsdt.latestRound(), block.timestamp, "Round ID mismatch");
+        assertEq(adaptorWeth.latestRound(), block.timestamp, "Round ID mismatch");
     }
 
     function test_latestRoundData() public view {
@@ -130,7 +130,7 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
             uint256 startedAt,
             uint256 updatedAt,
             uint80 answeredInRound
-        ) = adaptorUsdt.latestRoundData();
+        ) = adaptorWeth.latestRoundData();
 
         // Verify the values
         assertEq(roundId, uint80(block.timestamp), "Round ID mismatch");
@@ -140,41 +140,41 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
         assertEq(answeredInRound, uint80(block.timestamp), "Answered in round mismatch");
 
         // Compare with oracle's geomean price
-        uint256 oraclePrice = hookOracleContract.getGeomeanPrice(address(usdt), OBSERVATION_PERIOD);
+        uint256 oraclePrice = hookOracleContract.getGeomeanPrice(address(weth), OBSERVATION_PERIOD);
         assertEq(uint256(answer), oraclePrice, "Price mismatch with oracle");
     }
 
     function test_unsupportedFunctions() public {
         // Test that unsupported functions revert
         vm.expectRevert(ChainlinkPriceFeedAdaptor.ChainlinkPriceFeedAdaptor__NOT_SUPPORTED.selector);
-        adaptorUsdt.getAnswer(0);
+        adaptorWeth.getAnswer(0);
 
         vm.expectRevert(ChainlinkPriceFeedAdaptor.ChainlinkPriceFeedAdaptor__NOT_SUPPORTED.selector);
-        adaptorUsdt.getTimestamp(0);
+        adaptorWeth.getTimestamp(0);
 
         vm.expectRevert(ChainlinkPriceFeedAdaptor.ChainlinkPriceFeedAdaptor__NOT_SUPPORTED.selector);
-        adaptorUsdt.getRoundData(0);
+        adaptorWeth.getRoundData(0);
     }
 
     function test_createMultipleAdaptors() public {
         // Create another adaptor with different observation period
         uint256 newObservationPeriod = 600; // 10 minutes
-        ChainlinkPriceFeedAdaptor adaptorUsdt2 = ChainlinkPriceFeedAdaptor(
+        ChainlinkPriceFeedAdaptor adaptorWeth2 = ChainlinkPriceFeedAdaptor(
             hookOracleContract.createChainlinkPriceFeedAdaptor(
-                address(usdt), newObservationPeriod, address(0)
+                address(weth), newObservationPeriod, address(0)
             )
         );
 
         // Verify the new adaptor has the correct observation period
         assertEq(
-            adaptorUsdt2.observationPeriod(),
+            adaptorWeth2.observationPeriod(),
             newObservationPeriod,
             "New observation period mismatch"
         );
 
         // Prices should be different with different observation periods
-        int256 price1 = adaptorUsdt.latestAnswer();
-        int256 price2 = adaptorUsdt2.latestAnswer();
+        int256 price1 = adaptorWeth.latestAnswer();
+        int256 price2 = adaptorWeth2.latestAnswer();
 
         // Log prices for debugging
         console2.log("Price with observation period %d: %d", OBSERVATION_PERIOD, uint256(price1));
@@ -183,23 +183,54 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
         assertApproxEqRel(price1, price2, 0.01e18, "Prices should be approximately equal");
     }
 
-    // TODO test adaptorUsdtWithCL
+    // TODO test adaptorWethWithCL
+    function test_adaptorWethWithCL() public {
+        // Should return the price from the Chainlink aggregator
+        int256 priceWethInUsd = adaptorWethWithCL.latestAnswer();
+        int256 priceWethInUsdc = adaptorWeth.latestAnswer();
+
+        console2.log("Price with Chainlink aggregator: %d", uint256(priceWethInUsd));
+        console2.log("Price with Chainlink aggregator: %d", uint256(priceWethInUsdc));
+
+        assertApproxEqRel(
+            uint256(priceWethInUsd),
+            uint256(priceWethInUsdc) / 10 ** (18 - 8),
+            0.01e18,
+            "Price mismatch with Chainlink aggregator"
+        );
+
+        mockChainlinkAggregatorUsdcUsd.updateAnswer(2e8);
+
+        // Should return the price from the Chainlink aggregator
+        priceWethInUsd = adaptorWethWithCL.latestAnswer();
+        priceWethInUsdc = adaptorWeth.latestAnswer();
+
+        assertApproxEqRel(
+            uint256(priceWethInUsd),
+            uint256(priceWethInUsdc) * 2 / 10 ** (18 - 8),
+            0.01e18,
+            "Price mismatch with Chainlink aggregator"
+        );
+
+        console2.log("Price with Chainlink aggregator: %d", uint256(priceWethInUsd));
+        console2.log("Price with Chainlink aggregator: %d", uint256(priceWethInUsdc));
+    }
 
     function _performSwapsToGeneratePriceData(
         address _pool,
         WeightedPoolGeomeanOracleHookContract _hookOracleContract
     ) internal {
-        _swap(_pool, _hookOracleContract, usdt, usdc, 10_000e18, 10 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 10_000e18, 10 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 50 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 5 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e15, 10 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 100000e18, 10 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 5);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 1);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 1);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdc, weth, 10000e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdc, weth, 1e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdc, weth, 10000e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdc, weth, 1e18, 50 minutes);
+        _swap(_pool, _hookOracleContract, usdc, weth, 1e18, 5 minutes);
+        _swap(_pool, _hookOracleContract, usdc, weth, 1e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdc, weth, 1e15, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdc, weth, 100e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdc, weth, 1e18, 5);
+        _swap(_pool, _hookOracleContract, usdc, weth, 1e18, 1);
+        _swap(_pool, _hookOracleContract, usdc, weth, 1e18, 1);
+        _swap(_pool, _hookOracleContract, usdc, weth, 1e18, 10 minutes);
     }
 }

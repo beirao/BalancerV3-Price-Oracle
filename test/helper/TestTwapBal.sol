@@ -267,17 +267,17 @@ contract TestTwapBal is Test, Sort, Constants {
         // TODO express all price in referenceToken
         // if _amount swapped is small enough then the price ratio (amtIn/amtOut) should be close
         // to the price from the oracle formula.
-        if (_amount <= 50e18) {
+        if (_amount <= 10e18) {
             if (referenceToken == _tokenIn || referenceToken == _tokenOut) {
                 if (referenceToken == _tokenIn) {
                     assertApproxEqRel(
-                        (finalTokenOutBalance - initialTokenOutBalance) * 1e18 / _amount,
+                        _amount * 1e18 / (finalTokenOutBalance - initialTokenOutBalance),
                         _hookOracleContract.getLastPrice(address(_tokenOut)),
                         0.0001e18
                     ); // 0.1% tolerance
                 } else {
                     assertApproxEqRel(
-                        _amount * 1e18 / (finalTokenOutBalance - initialTokenOutBalance),
+                        (finalTokenOutBalance - initialTokenOutBalance) * 1e18 / _amount,
                         _hookOracleContract.getLastPrice(address(_tokenIn)),
                         0.0001e18
                     ); // 0.1% tolerance

@@ -49,7 +49,7 @@ contract WeightedOracleMultiAssets is TestTwapBal {
 
         uint256[] memory amountsToAdd = new uint256[](assets.length);
         amountsToAdd[0] = 1_000_000e18; // usdc
-        amountsToAdd[1] = 1_000_000e18; // weth
+        amountsToAdd[1] = 100_000e18; // weth
         amountsToAdd[2] = 1_000_000e18; // usdt
 
         vm.prank(userA);
@@ -166,20 +166,22 @@ contract WeightedOracleMultiAssets is TestTwapBal {
             "usdt price lastPrice ::: %18e", hookOracleContract.getLastPrice(address(usdt))
         );
 
-        assertLt(lastPriceWeth, hookOracleContract.getLastPrice(address(weth)));
-        assertGt(lastPriceUsdt, hookOracleContract.getLastPrice(address(usdt)));
+        assertGt(lastPriceWeth, hookOracleContract.getLastPrice(address(weth)));
+        assertLt(lastPriceUsdt, hookOracleContract.getLastPrice(address(usdt)));
 
-        uint256 balanceUsdc = weth.balanceOf(address(userC));
-        _swap(address(pool), hookOracleContract, usdc, weth, 1e18, 12);
+        uint256 balanceWeth = weth.balanceOf(address(userC));
+        uint256 balanceUsdc = usdc.balanceOf(address(userC));
 
-        console2.log("usdc price lastPrice ::: %18e", balanceUsdc);
+        _swap(address(pool), hookOracleContract, weth, usdc, 1e18, 12);
+
+        console2.log("usdc price lastPrice ::: %18e", balanceWeth);
         console2.log(
-            "usdc price lastPrice ::: %18e",
-            1e18 * 1e18 / (weth.balanceOf(address(userC)) - balanceUsdc)
+            "hookOracleContract.getLastPrice(address(weth)) ::: %18e",
+            hookOracleContract.getLastPrice(address(weth))
         );
 
         assertApproxEqRel(
-            weth.balanceOf(address(userC)) - balanceUsdc,
+            usdc.balanceOf(address(userC)) - balanceUsdc,
             hookOracleContract.getLastPrice(address(weth)),
             0.001e18
         );

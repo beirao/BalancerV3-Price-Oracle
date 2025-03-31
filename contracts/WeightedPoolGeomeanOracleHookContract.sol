@@ -154,7 +154,7 @@ contract WeightedPoolGeomeanOracleHookContract is
         uint256[] memory indexToWeight_ = WeightedPool(params_.pool).getNormalizedWeights();
         uint256 referenceTokenIndex_ = tokenToData[referenceToken].index;
         (,,, uint256[] memory lastBalancesWad_) = IVault(vault).getPoolTokenInfo(params_.pool);
-        uint256 denominator_ =
+        uint256 numerator_ =
             lastBalancesWad_[referenceTokenIndex_].divWadDown(indexToWeight_[referenceTokenIndex_]);
 
         // Update prices of the tokens swapped.
@@ -165,7 +165,7 @@ contract WeightedPoolGeomeanOracleHookContract is
                 tokenInIndex_,
                 indexToWeight_[tokenInIndex_],
                 lastBalancesWad_,
-                denominator_
+                numerator_
             );
         }
 
@@ -176,7 +176,7 @@ contract WeightedPoolGeomeanOracleHookContract is
                 tokenOutIndex_,
                 indexToWeight_[tokenOutIndex_],
                 lastBalancesWad_,
-                denominator_
+                numerator_
             );
         }
 
@@ -376,20 +376,20 @@ contract WeightedPoolGeomeanOracleHookContract is
      * @param _tokenIndex The index of the token in the pool.
      * @param _tokenWeight The normalized weight of the token in the pool.
      * @param _lastBalancesWad Array of token balances in the pool.
-     * @param _denominator The denominator value calculated from reference token.
+     * @param _numerator The numerator value calculated from reference token.
      */
     function _updatePrice(
         address _tokenAddress,
         uint256 _tokenIndex,
         uint256 _tokenWeight,
         uint256[] memory _lastBalancesWad,
-        uint256 _denominator
+        uint256 _numerator
     ) internal {
         Observation[] storage tokenToObservation = tokenToObservations[_tokenAddress];
         Observation storage lastObservation = tokenToObservation[tokenToObservation.length - 1];
 
-        uint256 numerator_ = _lastBalancesWad[_tokenIndex].divWadDown(_tokenWeight);
-        uint256 lastPrice_ = numerator_.divWadDown(_denominator);
+        uint256 denominator_ = _lastBalancesWad[_tokenIndex].divWadDown(_tokenWeight);
+        uint256 lastPrice_ = _numerator.divWadDown(denominator_);
 
         // Update observations with the last accumulatedPrice of a new block.
         // So we have maximum 1 observation per block.
