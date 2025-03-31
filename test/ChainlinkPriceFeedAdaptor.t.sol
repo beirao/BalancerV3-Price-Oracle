@@ -41,7 +41,7 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
         }
 
         hookOracleContract = new WeightedPoolGeomeanOracleHookContract(
-            address(vaultV3), address(weightedPoolFactory), address(usdc)
+            address(vaultV3), address(weightedPoolFactory), address(referenceToken)
         );
 
         pool = WeightedPool(createWeightedPool(assets, address(hookOracleContract), address(this)));
@@ -55,7 +55,7 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
         vm.stopPrank();
 
         // Perform some swaps to populate the oracle with price data
-        _performSwapsToGeneratePriceData();
+        _performSwapsToGeneratePriceData(address(pool), hookOracleContract);
 
         // 1 USDC = 1 USD
         mockChainlinkAggregatorUsdcUsd = new MockChainlinkAggregator(8, "USDC / USD", 1e8);
@@ -181,102 +181,5 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
         assertApproxEqRel(price1, price2, 0.01e18, "Prices should be approximately equal");
     }
 
-    /// -------- Helpers --------- ///
-
-    function _performSwapsToGeneratePriceData() internal {
-        // Perform a series of swaps with different amounts to generate price data
-        // Scale amounts properly according to token decimals
-        _swapToken1ToToken2(10_000e18, 100);
-        _swapToken1ToToken2(1e18, 100);
-        _swapToken1ToToken2(10_000e18, 100);
-        _swapToken1ToToken2(1e18, 100);
-        _swapToken2ToToken1(1e10, 100);
-        _swapToken1ToToken2(100000e18, 100);
-        _swapToken2ToToken1(1e18, 5);
-        _swapToken2ToToken1(1e18, 1);
-        _swapToken1ToToken2(1e18, 1);
-        _swapToken1ToToken2(1e18, 100);
-        _swapToken2ToToken1(1e18, 100);
-        _swapToken1ToToken2(1e18, 100);
-        _swapToken2ToToken1(1e18, 100);
-        _swapToken1ToToken2(1e18, 100);
-        _swapToken1ToToken2(1e18, 100);
-    }
-
-    function _swapToken1ToToken2(uint256 amount, uint256 skip) public {
-        _updateTimestamp(skip);
-
-        // Get initial balances
-        uint256 initialUsdtBalance = usdt.balanceOf(address(userC));
-        uint256 initialUsdcBalance = usdc.balanceOf(address(userC));
-
-        // Approve tokens for the router
-        usdt.approve(address(router), amount);
-
-        // Perform swap using TRouter's swapSingleTokenExactIn function
-        vm.startPrank(userC);
-        router.swapSingleTokenExactIn(
-            address(pool),
-            usdt,
-            usdc,
-            amount,
-            0 // No minimum amount out requirement for test
-        );
-        vm.stopPrank();
-
-        // Check balances after swap
-        uint256 finalUsdtBalance = usdt.balanceOf(address(userC));
-        uint256 finalUsdcBalance = usdc.balanceOf(address(userC));
-
-        // Verify swap was successful
-        assertEq(
-            initialUsdtBalance - finalUsdtBalance, amount, "USDT amount not deducted correctly"
-        );
-        assertTrue(finalUsdcBalance > initialUsdcBalance, "USDC balance did not increase");
-
-        console2.log("");
-        // console2.log(
-        //     "Price (in/out) ::: %18e", amount * 1e18 / (finalUsdcBalance - initialUsdcBalance)
-        // );
-
-        console2.log("Price (last) ::: %18e", hookOracleContract.getLastPrice(address(usdt)));
-    }
-
-    function _swapToken2ToToken1(uint256 amount, uint256 skip) public {
-        _updateTimestamp(skip);
-
-        // Get initial balances
-        uint256 initialUsdtBalance = usdt.balanceOf(address(userC));
-        uint256 initialUsdcBalance = usdc.balanceOf(address(userC));
-
-        // Approve tokens for the router
-        usdc.approve(address(router), amount);
-
-        // Perform swap using TRouter's swapSingleTokenExactIn function
-        vm.startPrank(userC);
-        router.swapSingleTokenExactIn(
-            address(pool),
-            usdc,
-            usdt,
-            amount,
-            0 // No minimum amount out requirement for test
-        );
-        vm.stopPrank();
-
-        // Check balances after swap
-        uint256 finalUsdtBalance = usdt.balanceOf(address(userC));
-        uint256 finalUsdcBalance = usdc.balanceOf(address(userC));
-
-        // Verify swap was successful
-        assertEq(
-            initialUsdcBalance - finalUsdcBalance, amount, "USDC amount not deducted correctly"
-        );
-        assertTrue(finalUsdtBalance > initialUsdtBalance, "USDT balance did not increase");
-
-        console2.log("");
-        // console2.log(
-        //     "Price (in/out) ::: %18e", amount * 1e18 / (finalUsdtBalance - initialUsdtBalance)
-        // );
-        console2.log("Price (last) ::: %18e", hookOracleContract.getLastPrice(address(usdt)));
-    }
+    // TODO test adaptorUsdtWithCL
 }

@@ -8,6 +8,9 @@ import {Sort} from "./Sort.sol";
 import {Constants} from "./Constants.sol";
 import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {ERC20Mock} from "./ERC20Mock.sol";
+import {WeightedPool} from "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts/WeightedPool.sol";
+import {WeightedPoolGeomeanOracleHookContract} from
+    "../../contracts/WeightedPoolGeomeanOracleHookContract.sol";
 
 /// balancer V3 imports
 import {
@@ -36,6 +39,7 @@ import {TRouter} from "./TRouter.sol";
 contract TestTwapBal is Test, Sort, Constants {
     uint128 public constant INITIAL_USDT_AMT = 10_000_000e18;
     uint128 public constant INITIAL_USDC_AMT = 10_000_000e18;
+    uint128 public constant INITIAL_WETH_AMT = 10_000_000e18;
 
     uint128 public constant INITIAL_ETH_MINT = 1000 ether;
 
@@ -48,6 +52,9 @@ contract TestTwapBal is Test, Sort, Constants {
 
     IERC20 public usdc;
     IERC20 public usdt;
+    IERC20 public weth;
+
+    IERC20 public referenceToken;
 
     uint256 public forkIdEth;
     uint256 public forkIdPolygon;
@@ -74,29 +81,40 @@ contract TestTwapBal is Test, Sort, Constants {
 
         usdc = IERC20(address(new ERC20Mock{salt: "1"}(18)));
         usdt = IERC20(address(new ERC20Mock{salt: "2"}(18)));
+        weth = IERC20(address(new ERC20Mock{salt: "3"}(18)));
+
+        referenceToken = usdc;
 
         /// initial mint
         ERC20Mock(address(usdc)).mint(userA, INITIAL_USDC_AMT);
         ERC20Mock(address(usdt)).mint(userA, INITIAL_USDT_AMT);
+        ERC20Mock(address(weth)).mint(userA, INITIAL_WETH_AMT);
 
         ERC20Mock(address(usdc)).mint(userB, INITIAL_USDC_AMT);
         ERC20Mock(address(usdt)).mint(userB, INITIAL_USDT_AMT);
+        ERC20Mock(address(weth)).mint(userB, INITIAL_WETH_AMT);
 
         ERC20Mock(address(usdc)).mint(userC, INITIAL_USDC_AMT);
         ERC20Mock(address(usdt)).mint(userC, INITIAL_USDT_AMT);
+        ERC20Mock(address(weth)).mint(userC, INITIAL_WETH_AMT);
 
         ERC20Mock(address(usdc)).mint(userB, INITIAL_USDC_AMT);
         ERC20Mock(address(usdt)).mint(userB, INITIAL_USDT_AMT);
-
+        ERC20Mock(address(weth)).mint(userB, INITIAL_WETH_AMT);
         router = new TRouter();
 
         // MAX approve "vault" by all users
         for (uint160 i = 1; i <= 3; i++) {
             vm.startPrank(address(i)); // address(0x1) == address(1)
+
             usdc.approve(vaultV3, type(uint256).max);
             usdt.approve(vaultV3, type(uint256).max);
+            weth.approve(vaultV3, type(uint256).max);
+
             usdc.approve(address(router), type(uint256).max);
             usdt.approve(address(router), type(uint256).max);
+            weth.approve(address(router), type(uint256).max);
+
             vm.stopPrank();
         }
     }
@@ -179,6 +197,9 @@ contract TestTwapBal is Test, Sort, Constants {
         for (uint256 i = 0; i < assets.length; i++) {
             normalizedWeights[i] = 1e18 / assets.length;
         }
+        if (assets.length % 2 == 1) {
+            normalizedWeights[2] += 1;
+        }
 
         address pool = address(
             WeightedPoolFactory(address(weightedPoolFactory)).create(
@@ -196,5 +217,92 @@ contract TestTwapBal is Test, Sort, Constants {
         );
 
         return (address(pool));
+    }
+
+    function _performSwapsToGeneratePriceData(
+        address _pool,
+        WeightedPoolGeomeanOracleHookContract _hookOracleContract
+    ) internal {
+        _swap(_pool, _hookOracleContract, usdt, usdc, 10_000e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 10_000e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 50 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 5 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e15, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 100000e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 5);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 1);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 1);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
+    }
+
+    function _swap(
+        address _pool,
+        WeightedPoolGeomeanOracleHookContract _hookOracleContract,
+        IERC20 _tokenIn,
+        IERC20 _tokenOut,
+        uint256 _amount,
+        uint256 _skip
+    ) public {
+        _updateTimestamp(_skip);
+        // Get initial balances
+        uint256 initialTokenInBalance = _tokenIn.balanceOf(address(userC));
+        uint256 initialTokenOutBalance = _tokenOut.balanceOf(address(userC));
+
+        // Approve tokens for the router
+        _tokenIn.approve(address(router), _amount);
+
+        // Perform swap using TRouter's swapSingleTokenExactIn function
+        vm.startPrank(userC);
+        router.swapSingleTokenExactIn(
+            address(_pool),
+            _tokenIn,
+            _tokenOut,
+            _amount,
+            0 // No minimum _amount out requirement for test
+        );
+        vm.stopPrank();
+
+        // Check balances after swap
+        uint256 finalTokenInBalance = _tokenIn.balanceOf(address(userC));
+        uint256 finalTokenOutBalance = _tokenOut.balanceOf(address(userC));
+
+        // Verify swap was successful
+        assertEq(
+            initialTokenInBalance - finalTokenInBalance,
+            _amount,
+            "_tokenIn _amount not deducted correctly"
+        );
+        assertTrue(
+            finalTokenOutBalance > initialTokenOutBalance, "_tokenOut balance did not increase"
+        );
+
+        // TODO express all price in referenceToken
+        // if _amount swapped is small enough then the price ratio (amtIn/amtOut) should be close
+        // to the price from the oracle formula.
+        if (_amount <= 50e18) {
+            if (referenceToken == _tokenIn) {
+                assertApproxEqRel(
+                    (finalTokenOutBalance - initialTokenOutBalance) * 1e18 / _amount,
+                    _hookOracleContract.getLastPrice(address(_tokenOut)),
+                    0.0001e18
+                ); // 0.01% tolerance
+            } else {
+                assertApproxEqRel(
+                    _amount * 1e18 / (finalTokenOutBalance - initialTokenOutBalance),
+                    _hookOracleContract.getLastPrice(address(_tokenIn)),
+                    0.0001e18
+                ); // 0.01% tolerance
+            }
+        }
+
+        // console2.log("");
+        // console2.log(
+        //     "Price (in/out) ::: %18e", _amount * 1e18 / (finalTokenOutBalance - initialTokenOutBalance)
+        // );
+        // console2.log(
+        //     "Price (oracle) ::: %18e", hookOracleContract.getLastPrice(address(_tokenIn))
+        // );
     }
 }
