@@ -56,9 +56,6 @@ contract WeightedPoolGeomeanOracleHookContract is
     /// @notice Mapping from token address to its price observations history.
     mapping(address => Observation[]) internal tokenToObservations;
 
-    /// @notice Address of the factory allowed to create pools with this hook.
-    address internal immutable allowedFactory; // TODO useless since we can only register once?
-
     /// @notice Address of the token used as reference for price calculations.
     address internal immutable referenceToken;
 
@@ -71,14 +68,12 @@ contract WeightedPoolGeomeanOracleHookContract is
     /**
      * @notice Initializes the oracle hook contract.
      * @param _vault The address of the Balancer V3 Vault.
-     * @param _allowedFactory The address of the WeightedPool factory that is allowed to create pools with this hook.
      * @param _referenceToken The address of the token to use as reference for price calculations.
      */
-    constructor(address _vault, address _allowedFactory, address _referenceToken)
+    constructor(address _vault, address _referenceToken)
         VaultGuard(IVault(_vault))
     {
         vault = _vault;
-        allowedFactory = _allowedFactory;
         referenceToken = _referenceToken;
     }
 
@@ -93,11 +88,6 @@ contract WeightedPoolGeomeanOracleHookContract is
             revert GeomeanOracleHookContract__ALREADY_REGISTERED();
         }
         pool = _pool;
-
-        // Check if factory is allowed.
-        if (_factory != allowedFactory) {
-            revert GeomeanOracleHookContract__FACTORY_NOT_ALLOWED(_factory);
-        }
 
         // Check if pool was created by the allowed factory.
         if (!BasePoolFactory(_factory).isPoolFromFactory(_pool)) {

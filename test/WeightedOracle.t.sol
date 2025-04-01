@@ -29,7 +29,7 @@ contract WeightedOracle is TestTwapBal {
         }
 
         hookOracleContract = new WeightedPoolGeomeanOracleHookContract(
-            address(vaultV3), address(weightedPoolFactory), address(referenceToken)
+            address(vaultV3), address(referenceToken)
         );
 
         pool = WeightedPool(
