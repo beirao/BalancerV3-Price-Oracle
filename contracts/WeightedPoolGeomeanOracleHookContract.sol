@@ -47,9 +47,6 @@ contract WeightedPoolGeomeanOracleHookContract is
     /// @notice The maximum observation period.
     uint256 public constant MAX_OBSERVATION_PERIOD = 30 days;
 
-    /// @notice The minimum observation period.
-    uint256 public constant MIN_OBSERVATION_PERIOD = 0; // TODO
-
     /// @notice The maximum price change between two observations (WAD = 100%).
     uint256 public constant MAX_INTER_OBSERVATION_PRICE_CHANGE = 1e17; // 10%
 
@@ -207,7 +204,6 @@ contract WeightedPoolGeomeanOracleHookContract is
         // Check the observation period is between the minimum and maximum allowed.
         if (
             _observationPeriod > MAX_OBSERVATION_PERIOD
-                || _observationPeriod < MIN_OBSERVATION_PERIOD
         ) {
             revert GeomeanOracleHookContract__WRONG_OBSERVATION_PERIOD();
         }
@@ -315,7 +311,6 @@ contract WeightedPoolGeomeanOracleHookContract is
         // Check the observation period is between the minimum and maximum allowed.
         if (
             _observationPeriod > MAX_OBSERVATION_PERIOD
-                || _observationPeriod < MIN_OBSERVATION_PERIOD
         ) {
             revert GeomeanOracleHookContract__WRONG_OBSERVATION_PERIOD();
         }
