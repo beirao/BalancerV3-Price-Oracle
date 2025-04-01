@@ -41,11 +41,17 @@ contract WeightedPoolGeomeanOracleHookContract is
     /// @notice The number of decimals in the WAD (18).
     uint256 internal constant WAD_DECIMALS = 18;
 
+    /// @notice The number of decimals in the WAD (18).
+    uint256 internal constant WAD = 1e18;
+
     /// @notice The maximum observation period.
     uint256 public constant MAX_OBSERVATION_PERIOD = 30 days;
 
     /// @notice The minimum observation period.
     uint256 public constant MIN_OBSERVATION_PERIOD = 0; // TODO
+
+    /// @notice The maximum price change between two observations (WAD = 100%).
+    uint256 public constant MAX_INTER_OBSERVATION_PRICE_CHANGE = 1e17; // 10%
 
     /// @notice Mapping from token address to its metadata.
     mapping(address => TokenData) internal tokenToData;
@@ -122,7 +128,7 @@ contract WeightedPoolGeomeanOracleHookContract is
                 tokenToObservations[token_].push(
                     Observation({
                         timestamp: uint40(block.timestamp),
-                        scaled18Price: 1e18,
+                        scaled18Price: uint216(WAD),
                         accumulatedPrice: 0
                     })
                 );
@@ -327,14 +333,22 @@ contract WeightedPoolGeomeanOracleHookContract is
     }
 
     /**
-     * @notice Get the latest price of a token.
+     * @notice Get the latest price of a token using reserve balances.
      * @dev THE RETURNED PRICE IS EASY TO MANIPULATE. USE `getGeomeanPrice()` INSTEAD.
      * @param _token The address of the token.
      * @return latestPrice_ The latest price of the token in units of the reference token.
      */
     function getLastPrice(address _token) external view returns (uint256) {
-        Observation[] storage observations = tokenToObservations[_token];
-        return _unscalePrice(observations[observations.length - 1].scaled18Price);
+        uint256[] memory indexToWeight_ = WeightedPool(pool).getNormalizedWeights();
+        uint256 referenceTokenIndex_ = tokenToData[referenceToken].index;
+        uint256 tokenIndex_ = tokenToData[_token].index;
+        (,,, uint256[] memory lastBalancesWad_) = IVault(vault).getPoolTokenInfo(pool);
+
+        uint256 numerator_ =
+            lastBalancesWad_[referenceTokenIndex_].divWadDown(indexToWeight_[referenceTokenIndex_]);
+        uint256 denominator_ = lastBalancesWad_[tokenIndex_].divWadDown(indexToWeight_[tokenIndex_]);
+
+        return _unscalePrice(numerator_.divWadDown(denominator_));
     }
 
     // ============= INTERNAL FUNCTIONS =============
@@ -394,14 +408,13 @@ contract WeightedPoolGeomeanOracleHookContract is
         // Update observations with the last accumulatedPrice of a new block.
         // So we have maximum 1 observation per block.
         if (tokenToData[_tokenAddress].lastBlockNumber != block.number) {
-            int256 nextAccumulatedPrice_ =
-                _calculateAccumulatedPrice(lastObservation, block.timestamp);
+            lastPrice_ = _manipulationSafeGuard(lastPrice_, lastObservation.scaled18Price);
 
             tokenToObservation.push(
                 Observation({
                     timestamp: uint40(block.timestamp),
                     scaled18Price: lastPrice_.safeCastTo216(),
-                    accumulatedPrice: nextAccumulatedPrice_
+                    accumulatedPrice: _calculateAccumulatedPrice(lastObservation, block.timestamp)
                 })
             );
 
@@ -409,6 +422,8 @@ contract WeightedPoolGeomeanOracleHookContract is
         } else {
             Observation storage secondLastObservation =
                 tokenToObservation[tokenToObservation.length - 2];
+            lastPrice_ = _manipulationSafeGuard(lastPrice_, secondLastObservation.scaled18Price);
+
             lastObservation.accumulatedPrice =
                 _calculateAccumulatedPrice(secondLastObservation, block.timestamp);
             lastObservation.scaled18Price = lastPrice_.safeCastTo216();
@@ -416,6 +431,32 @@ contract WeightedPoolGeomeanOracleHookContract is
         }
 
         emit GeomeanOracleHookContractPriceUpdated(_tokenAddress, lastPrice_);
+    }
+
+    /**
+     * @notice Performs a manipulation safe guard check on the price.
+     * @dev This relies on the simple assumption that if the price changes by more than MAX_INTER_OBSERVATION_PRICE_CHANGE
+     *      in a single block, it is either market manipulation or an inefficient swap. In both cases, applying the
+     *      `_manipulationSafeGuard()` filter is appropriate to protect the oracle from extreme price movements.
+     * @param _currentPrice The current price.
+     * @param _lastPrice The last price.
+     * @return The price after the manipulation safe guard check.
+     */
+    function _manipulationSafeGuard(uint256 _currentPrice, uint256 _lastPrice)
+        internal
+        pure
+        returns (uint256)
+    {
+        uint256 minPrice_ = _lastPrice.mulWadDown(WAD - MAX_INTER_OBSERVATION_PRICE_CHANGE);
+        uint256 maxPrice_ = _lastPrice.mulWadDown(WAD + MAX_INTER_OBSERVATION_PRICE_CHANGE);
+
+        // If manipulation is detected, return max/min allowed price.
+        if (_currentPrice > maxPrice_) {
+            return maxPrice_;
+        } else if (_currentPrice < minPrice_) {
+            return minPrice_;
+        }
+        return _currentPrice;
     }
 
     /**

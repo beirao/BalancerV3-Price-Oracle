@@ -100,16 +100,19 @@ contract WeightedOracle is TestTwapBal {
             lastPrice, hookOracleContract.getGeomeanPrice(address(usdt), observationPeriod), 0.8e18
         ); // less than 8%
 
-        for (uint256 i = 0; i < 73; i++) {
+        for (uint256 i = 0; i < 62; i++) {
             _swap(address(pool), hookOracleContract, usdc, usdt, 10_000e18, 0); // n = 1
         }
-        _updateTimestamp(1 hours);
+
+        for (uint256 i = 0; i < 1 hours / 12; i++) {
+            _swap(address(pool), hookOracleContract, usdt, usdc, 1e17, 12); // n = 1
+        }
 
         assertApproxEqRel(
             hookOracleContract.getLastPrice(address(usdt)),
             hookOracleContract.getGeomeanPrice(address(usdt), observationPeriod),
-            0.001e18
-        ); // less than 0,001%
+            0.01e18
+        ); // less than 1%
     }
 
     function test_priceManipulationSingleBlock() public {

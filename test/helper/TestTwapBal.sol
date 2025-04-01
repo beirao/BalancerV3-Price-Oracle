@@ -264,7 +264,6 @@ contract TestTwapBal is Test, Sort, Constants {
             finalTokenOutBalance > initialTokenOutBalance, "_tokenOut balance did not increase"
         );
 
-        // TODO express all price in referenceToken
         // if _amount swapped is small enough then the price ratio (amtIn/amtOut) should be close
         // to the price from the oracle formula.
         if (_amount <= 10e18) {
