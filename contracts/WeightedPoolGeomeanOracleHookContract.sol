@@ -458,6 +458,7 @@ contract WeightedPoolGeomeanOracleHookContract is
             revert GeomeanOracleHookContract__NOT_ENOUGH_OBSERVATIONS(lastIndex_ + 1);
         }
 
+        // Check if _hintLow is valid. If not default to 0.
         if (_hintLow > lastIndex_ || observations[_hintLow].timestamp > _targetTimestamp) {
             _hintLow = 0;
         }
