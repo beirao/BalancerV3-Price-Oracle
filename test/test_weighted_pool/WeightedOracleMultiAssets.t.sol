@@ -3,11 +3,11 @@ pragma solidity ^0.8.13;
 
 import "forge-std/console2.sol";
 
-import {TestTwapBal} from "./helper/TestTwapBal.sol";
+import {TestTwapBal} from "../helper/TestTwapBal.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {WeightedPool} from "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts/WeightedPool.sol";
 import {WeightedPoolGeomeanOracleHookContract} from
-    "../contracts/WeightedPoolGeomeanOracleHookContract.sol";
+    "../../contracts/WeightedPoolGeomeanOracleHookContract.sol";
 
 contract WeightedOracleMultiAssets is TestTwapBal {
     WeightedPool public pool;

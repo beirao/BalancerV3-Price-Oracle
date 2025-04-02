@@ -6,12 +6,12 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
-import {TestTwapBal} from "./helper/TestTwapBal.sol";
+import {TestTwapBal} from "../helper/TestTwapBal.sol";
 import {WeightedPool} from "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts/WeightedPool.sol";
 import {WeightedPoolGeomeanOracleHookContract} from
-    "../contracts/WeightedPoolGeomeanOracleHookContract.sol";
-import {ChainlinkPriceFeedAdaptor} from "../contracts/ChainlinkPriceFeedAdaptor.sol";
-import {IChainlinkAggregatorV2V3} from "../contracts/interfaces/IChainlinkAggregatorV2V3.sol";
+    "../../contracts/WeightedPoolGeomeanOracleHookContract.sol";
+import {ChainlinkPriceFeedAdaptor} from "../../contracts/ChainlinkPriceFeedAdaptor.sol";
+import {IChainlinkAggregatorV2V3} from "../../contracts/interfaces/IChainlinkAggregatorV2V3.sol";
 import {MockChainlinkAggregator} from "test/helper/MockChainlinkAggregator.sol";
 
 contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
