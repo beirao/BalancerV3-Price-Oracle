@@ -440,7 +440,7 @@ contract WeightedPoolGeomeanOracleHookContract is
 
     /**
      * @notice Performs a binary search to find the observation closest to the target timestamp.
-     * @dev Uses a hint to optimize the search by starting from a specific index. If the hint is invalid, 
+     * @dev Uses a hint to optimize the search by starting from a specific index. If the hint is invalid,
      *      default to 0.
      * @param observations The array of observations to search through.
      * @param _targetTimestamp The timestamp to search for.
@@ -458,7 +458,6 @@ contract WeightedPoolGeomeanOracleHookContract is
             revert GeomeanOracleHookContract__NOT_ENOUGH_OBSERVATIONS(lastIndex_ + 1);
         }
 
-        // Check if _hintLow is valid. If not default to 0.
         if (_hintLow > lastIndex_ || observations[_hintLow].timestamp > _targetTimestamp) {
             _hintLow = 0;
         }

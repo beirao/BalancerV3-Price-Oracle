@@ -169,6 +169,7 @@ contract WeightedOracle is TestTwapBal {
 
     function test_binarySearch() public {
         _performSwapsToGeneratePriceData(address(pool), hookOracleContract);
+        _swap(address(pool), hookOracleContract, usdt, usdc, 1e18, 1 minutes);
 
         // print all observations
         for (uint256 i = 0; i < 11; i++) {
@@ -181,8 +182,16 @@ contract WeightedOracle is TestTwapBal {
             console2.log("---");
         }
 
-        uint256 lastPrice = hookOracleContract.getGeomeanPrice(address(usdt), 1 hours, 80);
-        console2.log("Last price (oracle) ::: %18e", lastPrice);
+        uint256 lastPrice80 = hookOracleContract.getGeomeanPrice(address(usdt), 660, 80);
+        uint256 lastPrice10 = hookOracleContract.getGeomeanPrice(address(usdt), 660, 10);
+        uint256 lastPrice0 = hookOracleContract.getGeomeanPrice(address(usdt), 660, 0);
+
+        assertEq(lastPrice80, lastPrice10);
+        assertEq(lastPrice80, lastPrice0);
+
+        uint256 lastPrice9 = hookOracleContract.getGeomeanPrice(address(usdt), 660, 9);
+
+        assertEq(lastPrice9, lastPrice10);
     }
 
     function _performSwapsToGeneratePriceData(
