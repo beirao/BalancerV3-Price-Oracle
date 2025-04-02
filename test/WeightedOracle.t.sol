@@ -28,9 +28,8 @@ contract WeightedOracle is TestTwapBal {
             assetsSorted[i] = address(assets[i]);
         }
 
-        hookOracleContract = new WeightedPoolGeomeanOracleHookContract(
-            address(vaultV3), address(referenceToken)
-        );
+        hookOracleContract =
+            new WeightedPoolGeomeanOracleHookContract(address(vaultV3), address(referenceToken));
 
         pool = WeightedPool(
             createWeightedPool(assets, new uint256[](0), address(hookOracleContract), address(this))
@@ -166,6 +165,24 @@ contract WeightedOracle is TestTwapBal {
 
         _swap(address(pool), hookOracleContract, usdc, usdt, _amountIn, _skipIn);
         _swap(address(pool), hookOracleContract, usdt, usdc, _amountOut, _skipOut);
+    }
+
+    function test_binarySearch() public {
+        _performSwapsToGeneratePriceData(address(pool), hookOracleContract);
+
+        // print all observations
+        for (uint256 i = 0; i < 11; i++) {
+            (uint40 timestamp, uint216 scaled18Price, int256 accumulatedPrice) =
+                hookOracleContract.getObservation(address(usdt), i);
+            console2.log("Observation (%d) ::: ", i);
+            console2.logInt(int256(accumulatedPrice));
+            console2.log("Observation (%d) ::: %18e", i, uint256(scaled18Price));
+            console2.log("Observation (%d) ::: ", i, uint256(timestamp));
+            console2.log("---");
+        }
+
+        uint256 lastPrice = hookOracleContract.getGeomeanPrice(address(usdt), 1 hours, 80);
+        console2.log("Last price (oracle) ::: %18e", lastPrice);
     }
 
     function _performSwapsToGeneratePriceData(

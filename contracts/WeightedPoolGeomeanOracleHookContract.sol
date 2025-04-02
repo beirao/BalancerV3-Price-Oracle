@@ -70,9 +70,7 @@ contract WeightedPoolGeomeanOracleHookContract is
      * @param _vault The address of the Balancer V3 Vault.
      * @param _referenceToken The address of the token to use as reference for price calculations.
      */
-    constructor(address _vault, address _referenceToken)
-        VaultGuard(IVault(_vault))
-    {
+    constructor(address _vault, address _referenceToken) VaultGuard(IVault(_vault)) {
         vault = _vault;
         referenceToken = _referenceToken;
     }
@@ -192,9 +190,7 @@ contract WeightedPoolGeomeanOracleHookContract is
         }
 
         // Check the observation period is between the minimum and maximum allowed.
-        if (
-            _observationPeriod > MAX_OBSERVATION_PERIOD
-        ) {
+        if (_observationPeriod > MAX_OBSERVATION_PERIOD) {
             revert GeomeanOracleHookContract__WRONG_OBSERVATION_PERIOD();
         }
 
@@ -299,9 +295,7 @@ contract WeightedPoolGeomeanOracleHookContract is
         returns (uint256)
     {
         // Check the observation period is between the minimum and maximum allowed.
-        if (
-            _observationPeriod > MAX_OBSERVATION_PERIOD
-        ) {
+        if (_observationPeriod > MAX_OBSERVATION_PERIOD) {
             revert GeomeanOracleHookContract__WRONG_OBSERVATION_PERIOD();
         }
 
@@ -446,7 +440,8 @@ contract WeightedPoolGeomeanOracleHookContract is
 
     /**
      * @notice Performs a binary search to find the observation closest to the target timestamp.
-     * @dev Uses a hint to optimize the search by starting from a specific index.
+     * @dev Uses a hint to optimize the search by starting from a specific index. If the hint is invalid, 
+     *      default to 0.
      * @param observations The array of observations to search through.
      * @param _targetTimestamp The timestamp to search for.
      * @param _hintLow A hint for where to start the search (optimization). 0 if you don't have a hint.
@@ -455,12 +450,17 @@ contract WeightedPoolGeomeanOracleHookContract is
     function _binarySearch(
         Observation[] storage observations,
         uint256 _targetTimestamp,
-        uint256 _hintLow // TODO what happens if _hintLow is too high? should revert?
+        uint256 _hintLow
     ) internal view returns (uint256) {
         uint256 lastIndex_ = observations.length - 1;
 
         if (observations.length == 0 || _targetTimestamp <= observations[0].timestamp) {
             revert GeomeanOracleHookContract__NOT_ENOUGH_OBSERVATIONS(lastIndex_ + 1);
+        }
+
+        // Check if _hintLow is valid. If not default to 0.
+        if (_hintLow > lastIndex_ || observations[_hintLow].timestamp > _targetTimestamp) {
+            _hintLow = 0;
         }
 
         // If target timestamp is after the latest observation, return the latest.

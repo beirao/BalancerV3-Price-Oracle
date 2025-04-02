@@ -40,9 +40,8 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
             assetsSorted[i] = address(assets[i]);
         }
 
-        hookOracleContract = new WeightedPoolGeomeanOracleHookContract(
-            address(vaultV3), address(referenceToken)
-        );
+        hookOracleContract =
+            new WeightedPoolGeomeanOracleHookContract(address(vaultV3), address(referenceToken));
 
         pool = WeightedPool(
             createWeightedPool(assets, new uint256[](0), address(hookOracleContract), address(this))
@@ -183,7 +182,6 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
         assertApproxEqRel(price1, price2, 0.01e18, "Prices should be approximately equal");
     }
 
-    // TODO test adaptorWethWithCL
     function test_adaptorWethWithCL() public {
         // Should return the price from the Chainlink aggregator
         int256 priceWethInUsd = adaptorWethWithCL.latestAnswer();

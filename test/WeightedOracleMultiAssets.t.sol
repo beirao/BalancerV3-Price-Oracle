@@ -32,9 +32,8 @@ contract WeightedOracleMultiAssets is TestTwapBal {
             assetsSorted[i] = address(assets[i]);
         }
 
-        hookOracleContract = new WeightedPoolGeomeanOracleHookContract(
-            address(vaultV3), address(referenceToken)
-        );
+        hookOracleContract =
+            new WeightedPoolGeomeanOracleHookContract(address(vaultV3), address(referenceToken));
 
         uint256[] memory normalizedWeights = new uint256[](assets.length);
         normalizedWeights[0] = 5e17;
