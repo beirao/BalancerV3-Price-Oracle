@@ -22,13 +22,15 @@ import {
 } from "lib/balancer-v3-monorepo/pkg/interfaces/contracts/vault/VaultTypes.sol";
 import {BasePoolFactory} from
     "lib/balancer-v3-monorepo/pkg/pool-utils/contracts/BasePoolFactory.sol";
-import {WeightedPool} from "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts/WeightedPool.sol";
+import {
+    StablePool, Rounding
+} from "lib/balancer-v3-monorepo/pkg/pool-stable/contracts/StablePool.sol";
 
 /// Project imports.
 import {IGeomeanOracleHookContract} from "./interfaces/IGeomeanOracleHookContract.sol";
 import {ChainlinkPriceFeedAdaptor} from "./ChainlinkPriceFeedAdaptor.sol";
 
-contract WeightedPoolGeomeanOracleHookContract is
+contract StablePoolGeomeanOracleHookContract is
     IGeomeanOracleHookContract,
     BaseHooks,
     VaultGuard
@@ -140,37 +142,25 @@ contract WeightedPoolGeomeanOracleHookContract is
         onlyVault
         returns (bool, uint256)
     {
-        uint256[] memory indexToWeight_ = WeightedPool(params_.pool).getNormalizedWeights();
-        uint256 referenceTokenIndex_ = tokenToData[referenceToken].index;
         (,,, uint256[] memory lastBalancesWad_) = IVault(vault).getPoolTokenInfo(params_.pool);
+
         uint256 numerator_ =
-            lastBalancesWad_[referenceTokenIndex_].divWadDown(indexToWeight_[referenceTokenIndex_]);
+            _calculatePartielDerivative(lastBalancesWad_, tokenToData[referenceToken].index);
 
         // Update prices of the tokens swapped.
         if (address(params_.tokenIn) != referenceToken) {
             uint256 tokenInIndex_ = tokenToData[address(params_.tokenIn)].index;
-            _updatePrice(
-                address(params_.tokenIn),
-                tokenInIndex_,
-                indexToWeight_[tokenInIndex_],
-                lastBalancesWad_,
-                numerator_
-            );
+            _updatePrice(address(params_.tokenIn), tokenInIndex_, lastBalancesWad_, numerator_);
         }
 
         if (address(params_.tokenOut) != referenceToken) {
             uint256 tokenOutIndex_ = tokenToData[address(params_.tokenOut)].index;
-            _updatePrice(
-                address(params_.tokenOut),
-                tokenOutIndex_,
-                indexToWeight_[tokenOutIndex_],
-                lastBalancesWad_,
-                numerator_
-            );
+            _updatePrice(address(params_.tokenOut), tokenOutIndex_, lastBalancesWad_, numerator_);
         }
 
         return (true, 0);
     }
+
     /**
      * @notice Creates a new Chainlink price feed adaptor for a specific token
      * @dev The Chainlink price feed base tokens needs to be the same as the reference token.
@@ -180,7 +170,6 @@ contract WeightedPoolGeomeanOracleHookContract is
      *        reference token to the chainlink price feed quote token.
      * @return The address of the newly created ChainlinkPriceFeedAdaptor
      */
-
     function createChainlinkPriceFeedAdaptor(
         address _token,
         uint256 _observationPeriod,
@@ -325,16 +314,25 @@ contract WeightedPoolGeomeanOracleHookContract is
      * @return latestPrice_ The latest price of the token in units of the reference token.
      */
     function getLastPrice(address _token) external view returns (uint256) {
-        uint256[] memory indexToWeight_ = WeightedPool(pool).getNormalizedWeights();
-        uint256 referenceTokenIndex_ = tokenToData[referenceToken].index;
-        uint256 tokenIndex_ = tokenToData[_token].index;
         (,,, uint256[] memory lastBalancesWad_) = IVault(vault).getPoolTokenInfo(pool);
 
-        uint256 numerator_ =
-            lastBalancesWad_[referenceTokenIndex_].divWadDown(indexToWeight_[referenceTokenIndex_]);
-        uint256 denominator_ = lastBalancesWad_[tokenIndex_].divWadDown(indexToWeight_[tokenIndex_]);
+        ///////////////////////////////////////////////////////////////////////////////////////////////
+        //                                                        ∂f                                 //
+        //                                                      -------                              //
+        // f = Invariant function                                 ∂x                                 //
+        // x = Base reserve                Spot Price = df =  -----------                            //
+        // y = Quote reserve                                      ∂f                                 //
+        //                                                      -------                              //
+        //                                                        ∂y                                 //
+        ///////////////////////////////////////////////////////////////////////////////////////////////
 
-        return _unscalePrice(numerator_.divWadDown(denominator_));
+        uint256 numerator_ =
+            _calculatePartielDerivative(lastBalancesWad_, tokenToData[referenceToken].index);
+        uint256 denominator_ =
+            _calculatePartielDerivative(lastBalancesWad_, tokenToData[_token].index);
+
+        // return _unscalePrice(numerator_.divWadDown(denominator_)); // TODO
+        return _unscalePrice(denominator_.divWadDown(numerator_));
     }
 
     // ============= INTERNAL FUNCTIONS =============
@@ -370,25 +368,21 @@ contract WeightedPoolGeomeanOracleHookContract is
 
     /**
      * @notice Updates the price of a token based on the current pool state.
-     * @dev Calculates spot price as (x / Wx) / (y / Wy) where x is token balance, Wx is token weight,
-     *      y is reference token balance, and Wy is reference token weight.
      * @param _tokenAddress The address of the token to update.
      * @param _tokenIndex The index of the token in the pool.
-     * @param _tokenWeight The normalized weight of the token in the pool.
      * @param _lastBalancesWad Array of token balances in the pool.
      * @param _numerator The numerator value calculated from reference token.
      */
     function _updatePrice(
         address _tokenAddress,
         uint256 _tokenIndex,
-        uint256 _tokenWeight,
         uint256[] memory _lastBalancesWad,
         uint256 _numerator
     ) internal {
         Observation[] storage tokenToObservation = tokenToObservations[_tokenAddress];
         Observation storage lastObservation = tokenToObservation[tokenToObservation.length - 1];
 
-        uint256 denominator_ = _lastBalancesWad[_tokenIndex].divWadDown(_tokenWeight);
+        uint256 denominator_ = _calculatePartielDerivative(_lastBalancesWad, _tokenIndex);
         uint256 lastPrice_ = _numerator.divWadDown(denominator_);
 
         // Update observations with the last accumulatedPrice of a new block.
@@ -498,5 +492,36 @@ contract WeightedPoolGeomeanOracleHookContract is
         }
 
         return low_;
+    }
+
+    function _calculatePartielDerivative(uint256[] memory lastBalancesWad_, uint256 tokenIndex_)
+        internal
+        view
+        returns (uint256)
+    {
+        StablePool pool_ = StablePool(pool);
+
+        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        // invariant                                                                                                             //
+        // D = invariant                        df                  D^(n+1)                 1                                    //
+        // A = amplification coefficient      ------ = n^n * A + ------------- = n^n * A + --- * (n^n * A * S + D - n^n * A * D) //
+        // P = product of balances              dx                n^n * x * P               x                                    //
+        // n = number of tokens                                                                                                  //
+        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+        uint256 n_ = lastBalancesWad_.length;
+        (uint256 a_,, uint256 AMP_PRECISION) = pool_.getAmplificationParameter();
+        uint256 D_ = pool_.computeInvariant(lastBalancesWad_, Rounding.ROUND_UP);
+        uint256 A_ = (n_ ** n_) * a_;
+
+        uint256 S_;
+        for (uint256 i = 0; i < lastBalancesWad_.length; i++) {
+            S_ = S_ + lastBalancesWad_[i];
+        }
+
+        return A_ * WAD / AMP_PRECISION
+            + (A_ * S_ / AMP_PRECISION + D_ - A_ * D_ / AMP_PRECISION).divWadDown(
+                lastBalancesWad_[tokenIndex_]
+            );
     }
 }

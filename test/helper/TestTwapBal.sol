@@ -11,6 +11,7 @@ import {ERC20Mock} from "./ERC20Mock.sol";
 import {WeightedPool} from "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts/WeightedPool.sol";
 import {WeightedPoolGeomeanOracleHookContract} from
     "../../contracts/WeightedPoolGeomeanOracleHookContract.sol";
+import {IGeomeanOracleHookContract} from "../../contracts/interfaces/IGeomeanOracleHookContract.sol";
 
 /// balancer V3 imports
 import {
@@ -225,7 +226,7 @@ contract TestTwapBal is Test, Sort, Constants {
 
     function _swap(
         address _pool,
-        WeightedPoolGeomeanOracleHookContract _hookOracleContract,
+        IGeomeanOracleHookContract _hookOracleContract,
         IERC20 _tokenIn,
         IERC20 _tokenOut,
         uint256 _amount,
@@ -269,12 +270,16 @@ contract TestTwapBal is Test, Sort, Constants {
         if (_amount <= 10e18) {
             if (referenceToken == _tokenIn || referenceToken == _tokenOut) {
                 if (referenceToken == _tokenIn) {
+                    // console2.log("111 === ", _amount * 1e18 / (finalTokenOutBalance - initialTokenOutBalance));
+                    // console2.log("222 === ", _hookOracleContract.getLastPrice(address(_tokenOut)));
                     assertApproxEqRel(
                         _amount * 1e18 / (finalTokenOutBalance - initialTokenOutBalance),
                         _hookOracleContract.getLastPrice(address(_tokenOut)),
                         0.0001e18
                     ); // 0.1% tolerance
                 } else {
+                    // console2.log("333 === ", (finalTokenOutBalance - initialTokenOutBalance) * 1e18 / _amount);
+                    // console2.log("444 === ", _hookOracleContract.getLastPrice(address(_tokenIn)));
                     assertApproxEqRel(
                         (finalTokenOutBalance - initialTokenOutBalance) * 1e18 / _amount,
                         _hookOracleContract.getLastPrice(address(_tokenIn)),

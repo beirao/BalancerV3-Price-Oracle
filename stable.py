@@ -102,16 +102,27 @@ class StableSwapSimulator:
         A = float(self.amp)
         
         # Calculate partial derivatives for formula 4A(x+y) + D = 4AD + D³/(4xy)
-        # ∂f/∂x = 4A - D³/(4x²y)
-        # ∂f/∂y = 4A - D³/(4xy²)
+        # Rearranged as f(x,y) = 4A(x+y) + D - 4AD - D³/(4xy)
         
-        df_dx = 4 * A - (d**3) / (4 * (x_float**2) * y_float)
-        df_dy = 4 * A - (d**3) / (4 * x_float * (y_float**2))
-        # df_dx = 4 * A * (x_float**2) * y_float - (d**3) / 4
-        # df_dy = 4 * A * x_float * (y_float**2) - (d**3) / 4
+        # Partial derivative with respect to x:
+        # ∂f/∂x = 4A + D³/(4x²y)
+        # Since D³/(4xy) = (D³)/(4xy), the derivative of this term is (D³)/(4x²y)
+        
+        # df_dx = 4 * A + (d**3) / (4 * (x_float**2) * y_float)
+        # df_dy = 4 * A + (d**3) / (4 * x_float * (y_float**2))
+        # Convert Decimal balances to float for calculation
+        balances_float = [float(balance) for balance in self.balances]
+        sum_balances = sum(balances_float)
+        
+        df_dx = 4 * A + (4 * A * sum_balances + d - 4 * A * d) / x_float
+        df_dy = 4 * A + (4 * A * sum_balances + d - 4 * A * d) / y_float
+
+        print("df_dx ::: %18e", df_dx)
+        print("df_dy ::: %18e", df_dy)
+
         
         # Spot price Y/X = -dx/dy = df_dy / df_dx
-        self.spot_price = df_dy / df_dx
+        self.spot_price = df_dx / df_dy
         
         # Log total differential details
         print("\nSpot price calculation by total differential:")
