@@ -145,7 +145,7 @@ contract StablePoolGeomeanOracleHookContract is
         (,,, uint256[] memory lastBalancesWad_) = IVault(vault).getPoolTokenInfo(params_.pool);
 
         uint256 numerator_ =
-            _calculatePartielDerivative(lastBalancesWad_, tokenToData[referenceToken].index);
+            _calculatePartialDerivative(lastBalancesWad_, tokenToData[referenceToken].index);
 
         // Update prices of the tokens swapped.
         if (address(params_.tokenIn) != referenceToken) {
@@ -327,12 +327,12 @@ contract StablePoolGeomeanOracleHookContract is
         ///////////////////////////////////////////////////////////////////////////////////////////////
 
         uint256 numerator_ =
-            _calculatePartielDerivative(lastBalancesWad_, tokenToData[referenceToken].index);
+            _calculatePartialDerivative(lastBalancesWad_, tokenToData[referenceToken].index);
         uint256 denominator_ =
-            _calculatePartielDerivative(lastBalancesWad_, tokenToData[_token].index);
+            _calculatePartialDerivative(lastBalancesWad_, tokenToData[_token].index);
 
-        // return _unscalePrice(numerator_.divWadDown(denominator_)); // TODO
-        return _unscalePrice(denominator_.divWadDown(numerator_));
+        // return _unscalePrice(numerator_.divWadDown(denominator_));
+        return _unscalePrice(denominator_.divWadDown(numerator_)); // TODO
     }
 
     // ============= INTERNAL FUNCTIONS =============
@@ -382,8 +382,9 @@ contract StablePoolGeomeanOracleHookContract is
         Observation[] storage tokenToObservation = tokenToObservations[_tokenAddress];
         Observation storage lastObservation = tokenToObservation[tokenToObservation.length - 1];
 
-        uint256 denominator_ = _calculatePartielDerivative(_lastBalancesWad, _tokenIndex);
-        uint256 lastPrice_ = _numerator.divWadDown(denominator_);
+        uint256 denominator_ = _calculatePartialDerivative(_lastBalancesWad, _tokenIndex);
+        // uint256 lastPrice_ = _numerator.divWadDown(denominator_);
+        uint256 lastPrice_ = denominator_.divWadDown(_numerator); // TODO
 
         // Update observations with the last accumulatedPrice of a new block.
         // So we have maximum 1 observation per block.
@@ -494,26 +495,25 @@ contract StablePoolGeomeanOracleHookContract is
         return low_;
     }
 
-    function _calculatePartielDerivative(uint256[] memory lastBalancesWad_, uint256 tokenIndex_)
+    function _calculatePartialDerivative(uint256[] memory lastBalancesWad_, uint256 tokenIndex_)
         internal
         view
         returns (uint256)
     {
         StablePool pool_ = StablePool(pool);
 
-        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-        // invariant                                                                                                             //
-        // D = invariant                        df                  D^(n+1)                 1                                    //
-        // A = amplification coefficient      ------ = n^n * A + ------------- = n^n * A + --- * (n^n * A * S + D - n^n * A * D) //
-        // P = product of balances              dx                n^n * x * P               x                                    //
-        // n = number of tokens                                                                                                  //
-        ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////////////////////////////////////////////////
+        // S = sum of all balances                                                                             //
+        // D = invariant                              df            D^(n+1)           1                        //
+        // A = amplification coefficient (n^n * A)  ------ = A + ------------- = A + --- * (A * S + D - A * D) //
+        // P = product of balances                    dx          n^n * x * P         x                        //
+        // n = number of tokens                                                                                //
+        /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
         uint256 n_ = lastBalancesWad_.length;
         (uint256 a_,, uint256 AMP_PRECISION) = pool_.getAmplificationParameter();
         uint256 D_ = pool_.computeInvariant(lastBalancesWad_, Rounding.ROUND_UP);
-        uint256 A_ = (n_ ** n_) * a_;
-
+        uint256 A_ = n_ * a_;
         uint256 S_;
         for (uint256 i = 0; i < lastBalancesWad_.length; i++) {
             S_ = S_ + lastBalancesWad_[i];

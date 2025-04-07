@@ -50,13 +50,27 @@ contract StablePoolOracleTest is TestTwapBal {
         uint256 initialPrice = hookOracleContract.getLastPrice(address(usdt));
 
         _swap(address(pool), hookOracleContract, usdt, usdc, 1e18, 12);
-        for (uint256 i = 0; i < 1; i++) {
+
+        for (uint256 i = 0; i < 100; i++) {
             _swap(address(pool), hookOracleContract, usdt, usdc, 600_000e18, 12);
+            _swap(address(pool), hookOracleContract, usdt, usdc, 1e15, 12);
+
             _swap(address(pool), hookOracleContract, usdt, usdc, 400_000e18, 12);
-            // _swap(address(pool), hookOracleContract, usdc, usdt, 600_000e18, 12);
-            // _swap(address(pool), hookOracleContract, usdc, usdt, 400_000e18, 12);
+            _swap(address(pool), hookOracleContract, usdt, usdc, 1e15, 12);
+
+            _swap(address(pool), hookOracleContract, usdc, usdt, 600_000e18, 12);
+            _swap(address(pool), hookOracleContract, usdt, usdc, 1e15, 12);
+
+            _swap(address(pool), hookOracleContract, usdc, usdt, 400_000e18, 12);
+            _swap(address(pool), hookOracleContract, usdt, usdc, 1e15, 12);
         }
-        _swap(address(pool), hookOracleContract, usdt, usdc, 11e18, 12);
+
+        _swap(address(pool), hookOracleContract, usdt, usdc, 600_000e18, 12);
+        _swap(address(pool), hookOracleContract, usdt, usdc, 400_000e18, 12);
+        _swap(address(pool), hookOracleContract, usdt, usdc, 600_000e18, 12);
+        _swap(address(pool), hookOracleContract, usdt, usdc, 400_000e18, 12);
+
+        // _swap(address(pool), hookOracleContract, usdt, usdc, 11e18, 12);
 
         _swap(address(pool), hookOracleContract, usdt, usdc, 1e15, 12);
 
