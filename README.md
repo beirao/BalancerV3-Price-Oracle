@@ -2,10 +2,8 @@
 
 ## TODOs
 
--   Clean up TODOs in StablePoolGeomeanOracleHookContract
--   Test Stable pool price manipulation
 -   Test Stable pool price with more than 2 tokens
--   Write the doc
+-   Improve the doc
 
 
 ## Documentation

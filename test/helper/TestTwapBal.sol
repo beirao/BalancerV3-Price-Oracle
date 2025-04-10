@@ -270,20 +270,20 @@ contract TestTwapBal is Test, Sort, Constants {
         if (_amount <= 10e18) {
             if (referenceToken == _tokenIn || referenceToken == _tokenOut) {
                 if (referenceToken == _tokenIn) {
-                    console2.log(
-                        "111 === ", _amount * 1e18 / (finalTokenOutBalance - initialTokenOutBalance)
-                    );
-                    console2.log("222 === ", _hookOracleContract.getLastPrice(address(_tokenOut)));
+                    // console2.log(
+                    //     "True price ::: ", _amount * 1e18 / (finalTokenOutBalance - initialTokenOutBalance)
+                    // );
+                    // console2.log("Oracle price ::: ", _hookOracleContract.getLastPrice(address(_tokenOut)));
                     assertApproxEqRel(
                         _amount * 1e18 / (finalTokenOutBalance - initialTokenOutBalance),
                         _hookOracleContract.getLastPrice(address(_tokenOut)),
                         0.0001e18
                     ); // 0.1% tolerance
                 } else {
-                    console2.log(
-                        "333 === ", (finalTokenOutBalance - initialTokenOutBalance) * 1e18 / _amount
-                    );
-                    console2.log("444 === ", _hookOracleContract.getLastPrice(address(_tokenIn)));
+                    // console2.log(
+                    //     "True price ::: ", (finalTokenOutBalance - initialTokenOutBalance) * 1e18 / _amount
+                    // );
+                    // console2.log("Oracle price ::: ", _hookOracleContract.getLastPrice(address(_tokenIn)));
                     assertApproxEqRel(
                         (finalTokenOutBalance - initialTokenOutBalance) * 1e18 / _amount,
                         _hookOracleContract.getLastPrice(address(_tokenIn)),

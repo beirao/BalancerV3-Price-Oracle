@@ -327,12 +327,11 @@ contract StablePoolGeomeanOracleHookContract is
         ///////////////////////////////////////////////////////////////////////////////////////////////
 
         uint256 numerator_ =
-            _calculatePartialDerivative(lastBalancesWad_, tokenToData[referenceToken].index);
-        uint256 denominator_ =
             _calculatePartialDerivative(lastBalancesWad_, tokenToData[_token].index);
+        uint256 denominator_ =
+            _calculatePartialDerivative(lastBalancesWad_, tokenToData[referenceToken].index);
 
-        // return _unscalePrice(numerator_.divWadDown(denominator_));
-        return _unscalePrice(denominator_.divWadDown(numerator_)); // TODO
+        return _unscalePrice(numerator_.divWadDown(denominator_));
     }
 
     // ============= INTERNAL FUNCTIONS =============
@@ -371,20 +370,19 @@ contract StablePoolGeomeanOracleHookContract is
      * @param _tokenAddress The address of the token to update.
      * @param _tokenIndex The index of the token in the pool.
      * @param _lastBalancesWad Array of token balances in the pool.
-     * @param _numerator The numerator value calculated from reference token.
+     * @param _denominator The denominator value calculated from reference token.
      */
     function _updatePrice(
         address _tokenAddress,
         uint256 _tokenIndex,
         uint256[] memory _lastBalancesWad,
-        uint256 _numerator
+        uint256 _denominator
     ) internal {
         Observation[] storage tokenToObservation = tokenToObservations[_tokenAddress];
         Observation storage lastObservation = tokenToObservation[tokenToObservation.length - 1];
 
-        uint256 denominator_ = _calculatePartialDerivative(_lastBalancesWad, _tokenIndex);
-        // uint256 lastPrice_ = _numerator.divWadDown(denominator_);
-        uint256 lastPrice_ = denominator_.divWadDown(_numerator); // TODO
+        uint256 numerator_ = _calculatePartialDerivative(_lastBalancesWad, _tokenIndex);
+        uint256 lastPrice_ = numerator_.divWadDown(_denominator);
 
         // Update observations with the last accumulatedPrice of a new block.
         // So we have maximum 1 observation per block.

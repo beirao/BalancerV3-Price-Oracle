@@ -9,7 +9,7 @@ import {WeightedPool} from "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts
 import {WeightedPoolGeomeanOracleHookContract} from
     "../../contracts/WeightedPoolGeomeanOracleHookContract.sol";
 
-contract WeightedOracle is TestTwapBal {
+contract WeightedOracleTest is TestTwapBal {
     WeightedPool public pool;
     IERC20[] public assets;
     WeightedPoolGeomeanOracleHookContract public hookOracleContract;
@@ -60,25 +60,14 @@ contract WeightedOracle is TestTwapBal {
         assertNotEq(initialPrice, updatedPrice, "Prices should change after swaps");
     }
 
-    function test_getGeomeanPrice1() public {
-        _performSwapsToGeneratePriceData(address(pool), hookOracleContract);
-
-        uint256 lastPrice = 0;
-        for (uint256 i = 1; i < 500; i++) {
-            uint256 price = hookOracleContract.getGeomeanPrice(address(usdt), i);
-            console2.log("Price (%d) ::: %18e ", i, price, lastPrice >= price);
-            lastPrice = price;
-        }
-    }
-
     function test_getGeomeanPriceLinearity() public {
         _performSwapsToGeneratePriceData(address(pool), hookOracleContract);
 
-        console2.log("---");
         uint256 lastPrice = hookOracleContract.getGeomeanPrice(address(usdt), 1);
         for (uint256 i = 2; i < 500; i++) {
             uint256 price = hookOracleContract.getGeomeanPrice(address(usdt), i);
-            assertLe(price, lastPrice);
+            // console2.log("Price (%d) ::: %18e ", i, price, lastPrice <= price);
+            assertGe(price, lastPrice);
             lastPrice = price;
         }
     }
@@ -96,8 +85,10 @@ contract WeightedOracle is TestTwapBal {
         _updateTimestamp(24); // 24 3 block manipulation on eth mainnet
 
         assertApproxEqRel(
-            lastPrice, hookOracleContract.getGeomeanPrice(address(usdt), observationPeriod), 0.8e18
-        ); // less than 8%
+            lastPrice,
+            hookOracleContract.getGeomeanPrice(address(usdt), observationPeriod),
+            0.008e18
+        ); // less than 0,008%
 
         for (uint256 i = 0; i < 62; i++) {
             _swap(address(pool), hookOracleContract, usdc, usdt, 10_000e18, 0); // n = 1
@@ -110,8 +101,8 @@ contract WeightedOracle is TestTwapBal {
         assertApproxEqRel(
             hookOracleContract.getLastPrice(address(usdt)),
             hookOracleContract.getGeomeanPrice(address(usdt), observationPeriod),
-            0.01e18
-        ); // less than 1%
+            0.001e18
+        ); // less than 0,001%
     }
 
     function test_priceManipulationSingleBlock() public {
@@ -204,11 +195,11 @@ contract WeightedOracle is TestTwapBal {
         _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 50 minutes);
         _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 5 minutes);
         _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e15, 10 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 100000e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e15, 2 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 100000e18, 1 minutes);
         _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 5);
         _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 1);
         _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 1);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 1 minutes);
     }
 }

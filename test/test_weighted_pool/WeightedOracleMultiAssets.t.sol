@@ -9,7 +9,7 @@ import {WeightedPool} from "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts
 import {WeightedPoolGeomeanOracleHookContract} from
     "../../contracts/WeightedPoolGeomeanOracleHookContract.sol";
 
-contract WeightedOracleMultiAssets is TestTwapBal {
+contract WeightedOracleMultiAssetsTest is TestTwapBal {
     WeightedPool public pool;
     IERC20[] public assets;
     WeightedPoolGeomeanOracleHookContract public hookOracleContract;
