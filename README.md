@@ -8,7 +8,17 @@
 -   Write the doc
 
 
-## Usage
+## Documentation
+
+The project documentation is available in the [Technical Paper](./TECHPAPER.md), which provides detailed information about:
+
+- The mathematical foundations of the Balancer V3 Geomean Oracle
+- How the oracle works with both Weighted and Stable pools
+- Price calculation formulas and implementation details
+- Manipulation resistance mechanisms
+- Integration options with external systems
+
+For implementation details, refer to the source code of the oracle hook contracts and the Chainlink adaptor.
 
 ### Test
 
@@ -49,6 +59,4 @@ $ forge test
 
 Please use `forge fmt` before commiting.
 
-## Documentation
 
-TODO
