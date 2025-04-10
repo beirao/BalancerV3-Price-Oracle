@@ -1,4 +1,12 @@
-# Balancer V3 Geomean oracle contracts
+# Balancer V3 Geomean oracle contracts (WIP)
+
+## TODOs
+
+-   Clean up TODOs in StablePoolGeomeanOracleHookContract
+-   Test Stable pool price manipulation
+-   Test Stable pool price with more than 2 tokens
+-   Write the doc
+
 
 ## Usage
 
@@ -40,13 +48,6 @@ $ forge test
 ### Formating
 
 Please use `forge fmt` before commiting.
-
-## TODOs
-
--   Test manipulation
--   Test weighted pools with multiple token
--   Test weighted pools with different weights per tokens
--   Build the stable pool hook oracle contracts 
 
 ## Documentation
 
