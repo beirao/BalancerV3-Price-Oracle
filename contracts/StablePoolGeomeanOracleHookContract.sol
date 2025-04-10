@@ -301,10 +301,10 @@ contract StablePoolGeomeanOracleHookContract is
         Observation storage observationsPeriodStart =
             observations[_binarySearch(observations, startPeriodTimestamp_, _hintLow)];
 
-        int256 numerator_ = _calculateAccumulatedPrice(observationsNow, block.timestamp)
+        int256 averageLogPrice_ = _calculateAccumulatedPrice(observationsNow, block.timestamp)
             - _calculateAccumulatedPrice(observationsPeriodStart, startPeriodTimestamp_);
 
-        return _unscalePrice(uint256(wadExp(numerator_ / int256(_observationPeriod))));
+        return _unscalePrice(uint256(wadExp(averageLogPrice_ / int256(_observationPeriod))));
     }
 
     /**

@@ -2,175 +2,182 @@
 
 ## Abstract
 
-The Balancer V3 Geomean Oracle is a robust price oracle solution designed specifically for Balancer V3 pools. It provides reliable, manipulation-resistant price data for assets by calculating geometric mean prices over customizable time periods. Implemented as hook contracts for both Weighted and Stable pools, the oracle updates on every swap and features block-level granularity with built-in safeguards against price manipulation. The system supports seamless integration with the broader DeFi ecosystem through an optional Chainlink-compatible adaptor.
+The Balancer V3 Geomean Oracle is a robust price oracle solution designed specifically for Balancer V3 pools. It provides reliable, manipulation-resistant price data for assets by calculating geometric mean prices over customizable time periods. Implemented as hook contracts for both Weighted and Stable pools, the oracle updates on every swap and features block-level granularity with built-in safeguards against price manipulation. The system requires zero maintenance after deployment and supports seamless integration with the broader DeFi ecosystem through an optional Chainlink-compatible adaptor.
 
 ## Specs
 
-- **Compatibility**: Works with Weighted pools and Stable pools containing any number of assets
-- **Update Frequency**: On every swap
-- **Granularity**: One price update per block maximum
+- **Compatibility**: Works with Weighted pools (any number of assets, any weight) and Stable pools (any number of assets).
+- **Update Frequency**: On every swap.
+- **Granularity**: One price update per block maximum.
 - **Manipulation Resistance**:
-  - Protected against single-block manipulation through geometric mean calculation
-  - 10% maximum price change limit per block
-  - Even with control of 16 consecutive blocks, price deviation is limited to 8.5% over a 1-hour period
-- **Flexibility**: 
-  - Customizable observation period (up to 30 days)
-  - Create multiple Chainlink adaptors from a single oracle
-- **Maintenance**: Zero maintenance required after deployment
-- **Transformation**: Chainlink adaptors allow converting prices between different denominations (e.g., USDC to USD)
+  - Inherently protected against single-block manipulation via geometric mean calculation.
+  - **Manipulation Safe Guard**: Implements a maximum price change limit of 10% per block. This relies on the assumption that larger changes are likely manipulation or highly inefficient swaps.
+  - **Worst-Case Scenario**: Even if an attacker controls 16 consecutive blocks on Ethereum mainnet (an extremely unlikely event), the maximum price deviation is calculated to be 8.5% over a 1-hour observation period.
+- **Flexibility**:
+  - Fully customizable observation period (up to 30 days).
+  - Ability to create multiple Chainlink adaptors from a single oracle hook contract.
+- **Maintenance**: Zero maintenance required after initial deployment.
+- **Price Transformation**: Chainlink adaptors can be configured with a `_chainlinkAggregator` to convert the price output from the reference token denomination to another (e.g., from USDC to USD), enhancing interoperability.
+- **Security Profile**: Depending on the underlying blockchain's security and block times, this oracle can be considered safer than many second-class oracles.
 
 ## The maths
 
 ### Geometric mean
 
-The geometric mean price is calculated as follows:
+The geometric mean price provides a time-weighted average that naturally resists short-term price manipulation. It is calculated as:
 
-$$\text{Geometric Mean Price} = \prod_{i} (price_i^{\Delta T_i})^{1/T}$$
+$$\text{Geometric Mean Price} = \left( \prod_{i} price_i^{\Delta T_i} \right)^{1/T}$$
 
 Where:
-- $price_i$ represents the price at each observation point
-- $\Delta T_i$ is the time interval for that observation
-- $T$ is the total observation period
+- $price_i$ is the spot price during the $i$-th interval.
+- $\Delta T_i$ is the duration of the $i$-th interval.
+- $T = \sum \Delta T_i$ is the total observation period.
 
-For computational efficiency, this is implemented as:
+For computational efficiency and to avoid precision issues with products of many numbers, the oracle uses the logarithmic form:
 
 $$\text{Geometric Mean Price} = \exp\left(\frac{\sum_{i} (\Delta T_i \cdot \ln(price_i))}{T}\right)$$
 
-This approach provides a time-weighted average that is resistant to short-term price spikes and manipulation attempts.
+The term $\sum_{i} (\Delta T_i \cdot \ln(price_i))$ represents the accumulated log-price over the period $T$.
 
 ### Weighted Pool
 
-For Weighted pools, the spot price calculation uses the ratio of token balances adjusted by their respective weights:
+In Balancer V3 Weighted Pools, the spot price between two tokens (A and B) is determined by their balances ($balance_A$, $balance_B$) and their normalized weights ($weight_A$, $weight_B$):
 
-$$\text{Spot Price} = \frac{balance_B / weight_B}{balance_A / weight_A}$$
+$$\text{Spot Price} = \frac{b_B / w_B}{b_A / w_A}$$
 
-This formula reflects the fundamental price relationship in constant-product weighted pools. The geometric mean is then calculated using these spot prices over time.
+Where:
+- $b_A$ is the balance of token A
+- $b_B$ is the balance of token B
+- $w_A$ is the weight of token A
+- $w_B$ is the weight of token B
+
+
+This price reflects the marginal rate of substitution between the assets in the pool and is used as the $price_i$ input for the geometric mean calculation.
 
 ### Stable Pool
 
-For Stable pools, the price calculation is more complex due to the invariant function for stable swaps:
-
-The partial derivative method is used to determine spot prices:
+For Balancer V3 Stable Pools, the price calculation involves the pool's invariant $f$ and requires calculating partial derivatives with respect to the balances of the involved tokens ($x$ for the token, $y$ for the reference token):
 
 $$\text{Spot Price} = \frac{\partial f / \partial y}{\partial f / \partial x}$$
 
-Where:
-- $f$ is the invariant function
-- $x$ is the token balance
-- $y$ is the reference token balance
-
-For stable pools specifically:
+The specific form of the partial derivative for a token $x$ in a Stable Pool is:
 
 $$\frac{\partial f}{\partial x} = A + \frac{D^{(n+1)}}{n^n \cdot x \cdot P} = A + \frac{1}{x} \cdot (A \cdot S + D - A \cdot D)$$
 
 Where:
-- $S$ is the sum of all balances
-- $D$ is the invariant
-- $A$ is the amplification coefficient
-- $P$ is the product of balances
-- $n$ is the number of tokens
+- $S$ is the sum of all token balances (scaled).
+- $D$ is the pool's invariant.
+- $A$ is the amplification parameter (related to the `amp` factor).
+- $P$ is the product of all token balances (scaled).
+- $n$ is the number of tokens in the pool.
+
+This spot price is then used as the $price_i$ input for the geometric mean calculation.
 
 ## How does it work
 
 ### Observation
 
-The oracle maintains an array of price observations for each token in the pool:
+The oracle stores price observations for each non-reference token within the pool. Each observation captures the state at a specific point in time:
 
 ```solidity
 struct Observation {
-    uint40 timestamp;
-    uint216 scaled18Price;
-    int256 accumulatedPrice;
+    uint40 timestamp;         // Timestamp of the observation
+    uint216 scaled18Price;    // Spot price at timestamp (scaled to 18 decimals)
+    int256 accumulatedPrice;  // Accumulated log-price (ln(price) * time) up to timestamp
 }
 ```
 
-Each observation includes:
-- The timestamp when the observation was recorded
-- The price at that time (scaled to 18 decimals)
-- The accumulated price used for TWAP calculations
-
-The observations are recorded on a per-block basis, with a maximum of one observation per block to prevent manipulation within a single block.
+Observations are recorded with a maximum frequency of one per block. If multiple swaps occur within the same block, only the price resulting from the *last* swap in that block is recorded or used to update the existing observation for that block. This prevents intra-block manipulation from affecting the oracle state more than once per block.
 
 ### Price updates
 
-Price updates occur after every swap transaction through the `onAfterSwap` hook. The process follows these steps:
+Price updates are triggered by the `onAfterSwap` hook, which is called by the Balancer Vault after each swap involving the pool. The update logic is as follows:
 
-1. Calculate the spot price based on the current pool state
-2. If this is a new block since the last update:
-   - Apply the manipulation safeguard (limit price changes to 10%)
-   - Create a new observation with the current timestamp, price, and accumulated price
-3. If this is the same block as the last update:
-   - Update the existing observation with the new price
-   - The manipulation safeguard is still applied
+1.  **Calculate Current Spot Price**: Determine the spot price based on the pool's balances after the swap (using the formulas described in "The maths" section).
+2.  **Check Block Number**: Compare the current `block.number` with the `lastBlockNumber` stored for the token.
+3.  **New Block**:
+    - Retrieve the `scaled18Price` from the *most recent* stored observation.
+    - Apply the `_manipulationSafeGuard` to the newly calculated spot price, comparing it against the retrieved last price. This clamps the change to +/- 10%.
+    - Calculate the `accumulatedPrice` up to the current `block.timestamp` based on the *previous* observation's state.
+    - Store a *new* `Observation` struct with the current `block.timestamp`, the manipulation-checked `scaled18Price`, and the calculated `accumulatedPrice`.
+    - Update the token's `lastBlockNumber` to the current `block.number`.
+4.  **Same Block**:
+    - Retrieve the `scaled18Price` from the *second-to-last* stored observation (the price before the first swap in this block).
+    - Apply the `_manipulationSafeGuard` to the newly calculated spot price, comparing it against the retrieved second-to-last price.
+    - Recalculate the `accumulatedPrice` for the *current* observation based on the state of the *second-to-last* observation and the current `block.timestamp`.
+    - Update the *existing* `Observation` for the current block with the new manipulation-checked `scaled18Price` and the recalculated `accumulatedPrice`. (Timestamp remains unchanged).
 
-The manipulation safeguard works by comparing the current price to the previous price:
+The `_manipulationSafeGuard` function limits price volatility between consecutive blocks:
 ```solidity
 function _manipulationSafeGuard(uint256 _currentPrice, uint256 _lastPrice) internal pure returns (uint256) {
-    uint256 minPrice_ = _lastPrice.mulWadDown(WAD - MAX_INTER_OBSERVATION_PRICE_CHANGE);
-    uint256 maxPrice_ = _lastPrice.mulWadDown(WAD + MAX_INTER_OBSERVATION_PRICE_CHANGE);
+    uint256 minPrice_ = _lastPrice.mulWadDown(WAD - MAX_INTER_OBSERVATION_PRICE_CHANGE); // 90% of last price
+    uint256 maxPrice_ = _lastPrice.mulWadDown(WAD + MAX_INTER_OBSERVATION_PRICE_CHANGE); // 110% of last price
 
     if (_currentPrice > maxPrice_) {
         return maxPrice_;
     } else if (_currentPrice < minPrice_) {
         return minPrice_;
     }
-    return _currentPrice;
+    return _currentPrice; // Price change is within +/- 10%
 }
 ```
 
 ### Geometric mean price calculation
 
-The geometric mean price over a specified observation period is calculated as follows:
+To get the geometric mean price over a specific `_observationPeriod`, the `getGeomeanPrice` function performs these steps:
 
-1. Find the observation at the start of the period using binary search
-2. Calculate the accumulated price at the current time
-3. Calculate the accumulated price at the start of the period
-4. Compute the difference and divide by the observation period
-5. Apply the exponential function to get the geometric mean price
+1.  **Identify Boundaries**:
+    - Find the most recent observation (`observationsNow`).
+    - Determine the target timestamp for the start of the period: `startPeriodTimestamp_ = block.timestamp - _observationPeriod`.
+    - Use binary search (`_binarySearch`) to find the latest observation whose timestamp is less than or equal to `startPeriodTimestamp_` (`observationsPeriodStart`). A hint (`_hintLow`) can optimize this search.
+2.  **Calculate Accumulated Prices**:
+    - Calculate the interpolated `accumulatedPrice` at the exact current `block.timestamp` based on `observationsNow`.
+    - Calculate the interpolated `accumulatedPrice` at the exact `startPeriodTimestamp_` based on `observationsPeriodStart`.
+3.  **Compute Average Log-Price**: Calculate the difference between the two accumulated prices and divide by the `_observationPeriod`:
+    `averageLogPrice = (accumulatedNow - accumulatedStart) / _observationPeriod`
+4.  **Exponentiate**: Calculate the final geometric mean price by taking the exponent of the average log-price:
+    `geomeanPrice = exp(averageLogPrice)` (using `wadExp` for fixed-point math).
+5.  **Unscale**: Adjust the 18-decimal result to match the `referenceToken`'s decimals using `_unscalePrice`.
 
 ```solidity
 function getGeomeanPrice(address _token, uint256 _observationPeriod, uint256 _hintLow) public view returns (uint256) {
-    // ...
-    int256 numerator_ = _calculateAccumulatedPrice(observationsNow, block.timestamp)
+    // ... find observationsNow and observationsPeriodStart ...
+
+    int256 averageLogPrice_ = _calculateAccumulatedPrice(observationsNow, block.timestamp)
         - _calculateAccumulatedPrice(observationsPeriodStart, startPeriodTimestamp_);
 
-    return _unscalePrice(uint256(wadExp(numerator_ / int256(_observationPeriod))));
+    return _unscalePrice(uint256(wadExp(averageLogPrice_ / int256(_observationPeriod))));
+}
+
+function _calculateAccumulatedPrice(Observation storage observation, uint256 _timestamp) internal view returns (int256) {
+    // Interpolates accumulated price to _timestamp based on the observation's state
+    return observation.accumulatedPrice + (int256(_timestamp - observation.timestamp)) * wadLn(int216(observation.scaled18Price));
 }
 ```
 
-The use of the geometric mean ensures that the price is resistant to short-term manipulation, as it requires sustained price movement over the entire observation period to significantly impact the reported price.
-
 ## Chainlink adaptor
 
-The Chainlink adaptor (ChainlinkPriceFeedAdaptor) provides compatibility with systems that expect Chainlink's AggregatorV2V3 interface. Key features include:
+The `ChainlinkPriceFeedAdaptor` contract provides an interface compatible with Chainlink's `AggregatorV2V3Interface`. This allows seamless integration with protocols and systems that expect Chainlink price feeds.
 
-- Implements standard Chainlink interface methods (`latestAnswer()`, `latestRoundData()`, etc.)
-- Maps the geometric mean price to Chainlink's price representation
-- Allows for optional price conversion through an external Chainlink feed
-- Can transform prices from one denomination to another (e.g., from USDC to USD)
+**Key Features**:
 
-Creation of a new adaptor is simple:
+- Implements standard Chainlink methods like `latestAnswer()`, `latestTimestamp()`, `latestRoundData()`, `decimals()`, `description()`, etc.
+- Fetches the geometric mean price from the underlying `GeomeanOracleHookContract` for the specified `observationPeriod`.
+- **Optional Price Conversion**: If a `_chainlinkAggregator` address (pointing to an existing Chainlink feed, e.g., USDC/USD) is provided during adaptor creation, the adaptor will automatically convert the oracle's output price.
+    - Example: If the oracle provides ETH/USDC and the `_chainlinkAggregator` is USDC/USD, the adaptor's `latestAnswer()` will return the price in ETH/USD.
+    - Conversion logic: `finalPrice = (oraclePrice_ETH_USDC * chainlinkPrice_USDC_USD) / 10^referenceTokenDecimals`
+- **Simplified Round IDs**: Since the oracle updates continuously, the adaptor often uses `block.timestamp` as a proxy for round IDs where applicable, unless a real `_chainlinkAggregator` is used, in which case it delegates round information.
+
+**Creation**: Adaptors are deployed via the hook contract:
 ```solidity
 function createChainlinkPriceFeedAdaptor(
-    address _token,
-    uint256 _observationPeriod,
-    address _chainlinkAggregator
-) external returns (address)
+    address _token,                 // Token to get price for
+    uint256 _observationPeriod,     // TWAP period for this adaptor
+    address _chainlinkAggregator    // Optional: Address of Chainlink feed for price conversion (e.g., USDC/USD)
+) external returns (address);       // Returns address of the new adaptor
 ```
-
-The adaptor is particularly useful for:
-- Integrating with systems that require Chainlink price feeds
-- Converting between different price denominations
-- Providing compatibility with existing DeFi protocols
+This allows creating multiple adaptors with different observation periods or target denominations from the same core oracle hook.
 
 ## Conclusion
 
-The Balancer V3 Geomean Oracle provides a robust, flexible, and manipulation-resistant price oracle solution for DeFi applications. By leveraging the geometric mean calculation and implementing strong safeguards against price manipulation, the oracle ensures reliable price data even in adversarial conditions.
-
-Key advantages include:
-- Zero maintenance requirements
-- Strong protection against manipulation (maximum 8.5% deviation even in extreme scenarios)
-- Flexibility in observation periods and price denominations
-- Seamless integration with existing DeFi infrastructure through Chainlink compatibility
-
-The combination of mathematical robustness, security features, and integration capabilities makes this oracle solution appropriate for a wide range of DeFi applications requiring reliable price data from Balancer V3 pools.
+The Balancer V3 Geomean Oracle offers a highly robust, flexible, and low-maintenance on-chain price feed solution. Its use of geometric means and per-block manipulation safeguards provides strong resistance against common oracle attacks. Compatibility with both Weighted and Stable pools, coupled with the Chainlink adaptor for enhanced interoperability, makes it a versatile tool for DeFi applications built on Balancer V3. The zero-maintenance design further reduces operational overhead for developers. Its security properties, particularly the quantifiable resistance to multi-block manipulation, position it as a potentially safer alternative to simpler TWAP oracles or less established price sources, especially on blockchains with reliable block production.
