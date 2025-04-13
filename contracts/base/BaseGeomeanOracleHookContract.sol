@@ -24,8 +24,8 @@ import {BasePoolFactory} from
     "lib/balancer-v3-monorepo/pkg/pool-utils/contracts/BasePoolFactory.sol";
 
 /// Project imports.
-import {IGeomeanOracleHookContract} from "../interfaces/IGeomeanOracleHookContract.sol";
-import {ChainlinkPriceFeedAdaptor} from "./ChainlinkPriceFeedAdaptor.sol";
+import {IGeomeanOracleHookContract} from "contracts/interfaces/IGeomeanOracleHookContract.sol";
+import {ChainlinkPriceFeedAdaptor} from "contracts/base/ChainlinkPriceFeedAdaptor.sol";
 
 abstract contract BaseGeomeanOracleHookContract is
     IGeomeanOracleHookContract,

@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 
 // Base imports.
 import {IVault} from "lib/balancer-v3-monorepo/pkg/interfaces/contracts/vault/IVault.sol";
-import {BaseGeomeanOracleHookContract} from "./base/BaseGeomeanOracleHookContract.sol";
+import {BaseGeomeanOracleHookContract} from "contracts/base/BaseGeomeanOracleHookContract.sol";
 import {FixedPointMathLib} from "lib/solmate/src/utils/FixedPointMathLib.sol";
 
 // StablePool imports.
