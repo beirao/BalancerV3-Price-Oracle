@@ -10,7 +10,7 @@ import {TestTwapBal} from "../helper/TestTwapBal.sol";
 import {WeightedPool} from "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts/WeightedPool.sol";
 import {WeightedPoolGeomeanOracleHookContract} from
     "../../contracts/WeightedPoolGeomeanOracleHookContract.sol";
-import {ChainlinkPriceFeedAdaptor} from "../../contracts/ChainlinkPriceFeedAdaptor.sol";
+import {ChainlinkPriceFeedAdaptor} from "../../contracts/base/ChainlinkPriceFeedAdaptor.sol";
 import {IChainlinkAggregatorV2V3} from "../../contracts/interfaces/IChainlinkAggregatorV2V3.sol";
 import {MockChainlinkAggregator} from "test/helper/MockChainlinkAggregator.sol";
 

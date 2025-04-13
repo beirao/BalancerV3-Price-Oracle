@@ -2,8 +2,8 @@
 pragma solidity 0.8.26;
 
 import {ERC20} from "lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
-import {IChainlinkAggregatorV2V3} from "./interfaces/IChainlinkAggregatorV2V3.sol";
-import {IGeomeanOracleHookContract} from "./interfaces/IGeomeanOracleHookContract.sol";
+import {IChainlinkAggregatorV2V3} from "contracts/interfaces/IChainlinkAggregatorV2V3.sol";
+import {IGeomeanOracleHookContract} from "contracts/interfaces/IGeomeanOracleHookContract.sol";
 
 /**
  * @title ChainlinkPriceFeedAdaptor

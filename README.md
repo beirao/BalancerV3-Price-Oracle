@@ -5,7 +5,6 @@
 -   Test Stable pool price with more than 2 tokens
 -   Improve the doc
 
-
 ## Documentation
 
 The project documentation is available in the [Technical Paper](./TECHPAPER.md), which provides detailed information about:
