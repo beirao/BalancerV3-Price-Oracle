@@ -2,9 +2,9 @@
 
 ## TODOs
 
--   Test Stable pool price with more than 2 tokens
+-   Tests BPT oracle/manipulation
+-   Tests tokens with different decimals
 -   Improve the doc
-
 
 ## Documentation
 

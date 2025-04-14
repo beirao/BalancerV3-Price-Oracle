@@ -10,7 +10,7 @@ import {TestTwapBal} from "../helper/TestTwapBal.sol";
 import {WeightedPool} from "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts/WeightedPool.sol";
 import {WeightedPoolGeomeanOracleHookContract} from
     "../../contracts/WeightedPoolGeomeanOracleHookContract.sol";
-import {ChainlinkPriceFeedAdaptor} from "../../contracts/ChainlinkPriceFeedAdaptor.sol";
+import {ChainlinkPriceFeedAdaptor} from "../../contracts/base/ChainlinkPriceFeedAdaptor.sol";
 import {IChainlinkAggregatorV2V3} from "../../contracts/interfaces/IChainlinkAggregatorV2V3.sol";
 import {MockChainlinkAggregator} from "test/helper/MockChainlinkAggregator.sol";
 
@@ -212,6 +212,20 @@ contract ChainlinkPriceFeedAdaptorTest is TestTwapBal {
 
         console2.log("Price with Chainlink aggregator: %d", uint256(priceWethInUsd));
         console2.log("Price with Chainlink aggregator: %d", uint256(priceWethInUsdc));
+    }
+
+    function test_BPT_price() public {
+        uint256 priceBptBefore =
+            hookOracleContract.getGeomeanPrice(address(pool), OBSERVATION_PERIOD);
+        console2.log("Price of BPT: %18e", priceBptBefore);
+
+        _performSwapsToGeneratePriceData(address(pool), hookOracleContract);
+
+        uint256 priceBptAfter =
+            hookOracleContract.getGeomeanPrice(address(pool), OBSERVATION_PERIOD);
+        console2.log("Price of BPT: %18e", priceBptAfter);
+
+        assertGt(priceBptAfter, priceBptBefore, "Price should increase");
     }
 
     function _performSwapsToGeneratePriceData(
