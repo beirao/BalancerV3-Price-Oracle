@@ -24,23 +24,32 @@ contract StablePoolGeomeanOracleHookContract is BaseGeomeanOracleHookContract {
     {}
 
     /// @inheritdoc BaseGeomeanOracleHookContract
-    function getLastPrice(address _token) public view override returns (uint256) {
-        (,,, uint256[] memory lastBalancesWad_) = IVault(vault).getPoolTokenInfo(pool);
-
+    function _calculateTokenPrice(address _token, uint256[] memory _lastBalancesWad)
+        internal
+        view
+        override
+        returns (uint256)
+    {
         uint256 numerator_ =
-            _calculatePartialDerivative(lastBalancesWad_, tokenToData[_token].index, 0);
+            _calculatePartialDerivative(_lastBalancesWad, tokenToData[_token].index);
         uint256 denominator_ =
-            _calculatePartialDerivative(lastBalancesWad_, tokenToData[referenceToken].index, 0);
+            _calculatePartialDerivative(_lastBalancesWad, tokenToData[referenceToken].index);
 
-        return _unscalePrice(numerator_.divWadDown(denominator_));
+        return numerator_.divWadDown(denominator_);
     }
 
-    /// @inheritdoc BaseGeomeanOracleHookContract
-    function _calculatePartialDerivative(
-        uint256[] memory lastBalancesWad_,
-        uint256 tokenIndex_,
-        uint256
-    ) internal view override returns (uint256) {
+    /**
+     * @notice Calculates the partial derivative of the invariant function with respect to a token.
+     * @dev This function is implemented by derived contracts based on their specific pool math.
+     * @param _lastBalancesWad The array of token balances in WAD format.
+     * @param _tokenIndex The index of the token in the pool.
+     * @return The partial derivative value used in price calculations.
+     */
+    function _calculatePartialDerivative(uint256[] memory _lastBalancesWad, uint256 _tokenIndex)
+        internal
+        view
+        returns (uint256)
+    {
         StablePool pool_ = StablePool(pool);
 
         /////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -51,18 +60,18 @@ contract StablePoolGeomeanOracleHookContract is BaseGeomeanOracleHookContract {
         // n = number of tokens                                                                                //
         /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        uint256 n_ = lastBalancesWad_.length;
+        uint256 n_ = _lastBalancesWad.length;
         (uint256 a_,, uint256 AMP_PRECISION) = pool_.getAmplificationParameter();
-        uint256 D_ = pool_.computeInvariant(lastBalancesWad_, Rounding.ROUND_UP);
+        uint256 D_ = pool_.computeInvariant(_lastBalancesWad, Rounding.ROUND_UP);
         uint256 A_ = n_ * a_;
         uint256 S_;
-        for (uint256 i = 0; i < lastBalancesWad_.length; i++) {
-            S_ = S_ + lastBalancesWad_[i];
+        for (uint256 i = 0; i < _lastBalancesWad.length; i++) {
+            S_ = S_ + _lastBalancesWad[i];
         }
 
         return A_ * WAD / AMP_PRECISION
             + (A_ * S_ / AMP_PRECISION + D_ - A_ * D_ / AMP_PRECISION).divWadDown(
-                lastBalancesWad_[tokenIndex_]
+                _lastBalancesWad[_tokenIndex]
             );
     }
 }

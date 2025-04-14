@@ -27,6 +27,13 @@ import {BasePoolFactory} from
 import {IGeomeanOracleHookContract} from "contracts/interfaces/IGeomeanOracleHookContract.sol";
 import {ChainlinkPriceFeedAdaptor} from "contracts/base/ChainlinkPriceFeedAdaptor.sol";
 
+/**
+ * @title BaseGeomeanOracleHookContract
+ * @notice Base contract for GeomeanOracleHookContract implementations.
+ * @dev This contract provides a base implementation for a GeomeanOracleHookContract.
+ * It includes functionality for registering pools, updating prices, and calculating geometric mean prices.
+ * @dev This contract is abstract and must be inherited by a contract that implements the `_calculateTokenPrice()` function.
+ */
 abstract contract BaseGeomeanOracleHookContract is
     IGeomeanOracleHookContract,
     BaseHooks,
@@ -105,7 +112,7 @@ abstract contract BaseGeomeanOracleHookContract is
 
             // Initialize observations.
             // AccumulatedPrice is 0 because we don't have any price data yet.
-            // The oracle will be safe once the observation period has passed.
+            // The oracle will be safe to use once the observation period has passed.
             if (token_ != referenceToken) {
                 tokenToObservations[token_].push(
                     Observation({
@@ -115,6 +122,21 @@ abstract contract BaseGeomeanOracleHookContract is
                     })
                 );
             }
+        }
+
+        // Register the BPT token.
+        {
+            // Initialize tokenToIndex.
+            tokenToData[_pool] =
+                TokenData({index: uint8(type(uint8).max), lastBlockNumber: uint248(block.number)});
+
+            tokenToObservations[_pool].push(
+                Observation({
+                    timestamp: uint40(block.timestamp),
+                    scaled18Price: uint216(WAD),
+                    accumulatedPrice: 0
+                })
+            );
         }
 
         if (!isReferenceTokenIncluded_) {
@@ -148,8 +170,12 @@ abstract contract BaseGeomeanOracleHookContract is
             _updatePrice(address(params_.tokenOut));
         }
 
+        // Always update the BPT price.
+        _updatePrice(pool);
+
         return (true, 0);
     }
+
     /**
      * @notice Creates a new Chainlink price feed adaptor for a specific token
      * @dev The Chainlink price feed base tokens needs to be the same as the reference token.
@@ -159,7 +185,6 @@ abstract contract BaseGeomeanOracleHookContract is
      *        reference token to the chainlink price feed quote token.
      * @return The address of the newly created ChainlinkPriceFeedAdaptor
      */
-
     function createChainlinkPriceFeedAdaptor(
         address _token,
         uint256 _observationPeriod,
@@ -170,10 +195,7 @@ abstract contract BaseGeomeanOracleHookContract is
             revert GeomeanOracleHookContract__TOKEN_IS_REFERENCE_TOKEN();
         }
 
-        // Check if `_token` is included in the pool.
-        if (tokenToData[_token].lastBlockNumber == 0) {
-            revert GeomeanOracleHookContract__TOKEN_NOT_INCLUDED_IN_THE_POOL();
-        }
+        _checkTokenIsIncluded(_token);
 
         // Check the observation period is between the minimum and maximum allowed.
         if (_observationPeriod > MAX_OBSERVATION_PERIOD) {
@@ -214,15 +236,17 @@ abstract contract BaseGeomeanOracleHookContract is
      * @notice Get a specific observation for a token.
      * @param _token The address of the token.
      * @param _index The index of the observation to retrieve.
-     * @return timestamp_ The timestamp of the observation.
-     * @return scaled18Price_ The scaled to 18 decimals price at the time of the observation.
-     * @return accumulatedPrice_ The accumulated price for TWAP calculations.
+     * @return The timestamp of the observation.
+     * @return The scaled to 18 decimals price at the time of the observation.
+     * @return The accumulated price for TWAP calculations.
      */
     function getObservation(address _token, uint256 _index)
         external
         view
         returns (uint40, uint216, int256)
     {
+        _checkTokenIsIncluded(_token);
+
         Observation memory observation_ = tokenToObservations[_token][_index];
         return (observation_.timestamp, observation_.scaled18Price, observation_.accumulatedPrice);
     }
@@ -230,16 +254,18 @@ abstract contract BaseGeomeanOracleHookContract is
     /**
      * @notice Get the latest observation for a token.
      * @param _token The address of the token.
-     * @return timestamp_ The timestamp of the observation.
-     * @return scaled18Price_ The scaled to 18 decimals price at the time of the observation.
-     * @return accumulatedPrice_ The accumulated price for TWAP calculations.
-     * @return numberOfObservations_ The number of observations.
+     * @return The timestamp of the observation.
+     * @return The scaled to 18 decimals price at the time of the observation.
+     * @return The accumulated price for TWAP calculations.
+     * @return The number of observations.
      */
     function getLatestObservation(address _token)
         external
         view
         returns (uint40, uint216, int256, uint256)
     {
+        _checkTokenIsIncluded(_token);
+
         uint256 numberOfObservations_ = tokenToObservations[_token].length - 1;
         Observation[] storage observations = tokenToObservations[_token];
         Observation memory observation_ = observations[numberOfObservations_];
@@ -280,6 +306,8 @@ abstract contract BaseGeomeanOracleHookContract is
         view
         returns (uint256)
     {
+        _checkTokenIsIncluded(_token);
+
         // Check the observation period is between the minimum and maximum allowed.
         if (_observationPeriod > MAX_OBSERVATION_PERIOD) {
             revert GeomeanOracleHookContract__WRONG_OBSERVATION_PERIOD();
@@ -298,10 +326,10 @@ abstract contract BaseGeomeanOracleHookContract is
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
-    //                                                        ∂f                                 //
+    // General formula for spot price calculation.            ∂f                                 //
     //                                                      -------                              //
     // f = Invariant function                                 ∂x                                 //
-    // x = Base reserve                Spot Price = df =  -----------                            //
+    // x = Base reserve                     Spot Price =  -----------                            //
     // y = Quote reserve                                      ∂f                                 //
     //                                                      -------                              //
     //                                                        ∂y                                 //
@@ -311,11 +339,61 @@ abstract contract BaseGeomeanOracleHookContract is
      * @notice Get the latest price of a token using reserve balances.
      * @dev THE RETURNED PRICE IS EASY TO MANIPULATE. USE `getGeomeanPrice()` INSTEAD.
      * @param _token The address of the token.
-     * @return latestPrice_ The latest price of the token in units of the reference token.
+     * @return The latest price of the token in units of the reference token.
      */
-    function getLastPrice(address _token) public view virtual returns (uint256);
+    function getLastPrice(address _token) public view override returns (uint256) {
+        return _unscalePrice(_getLastPrice(_token));
+    }
 
     // ============= INTERNAL FUNCTIONS =============
+
+    /**
+     * @notice Get the latest price of a token using reserve balances.
+     * @dev This function is implemented by derived contracts based on their specific pool math.
+     * @dev This function should not return the price of the BPT token.
+     * @param _token The address of the token.
+     * @param _lastBalancesWad The last balances of the pool.
+     * @return latestPrice_ The latest price of the token in WAD.
+     */
+    function _calculateTokenPrice(address _token, uint256[] memory _lastBalancesWad)
+        internal
+        view
+        virtual
+        returns (uint256);
+
+    /**
+     * @notice Get the latest price of a token using reserve balances.
+     * @param _token The address of the token.
+     * @return The latest price of the token in WAD.
+     */
+    function _getLastPrice(address _token) public view returns (uint256) {
+        _checkTokenIsIncluded(_token);
+
+        uint256 finalPrice_;
+        (IERC20[] memory tokens_,,, uint256[] memory lastBalancesWad_) =
+            IVault(vault).getPoolTokenInfo(pool);
+
+        if (_token != pool) {
+            finalPrice_ = _calculateTokenPrice(_token, lastBalancesWad_);
+        } else {
+            uint256 sumPrice_;
+            for (uint256 i; i < lastBalancesWad_.length; i++) {
+                sumPrice_ += lastBalancesWad_[i].mulWadDown(
+                    _calculateTokenPrice(address(tokens_[i]), lastBalancesWad_)
+                );
+            }
+            finalPrice_ = sumPrice_.divWadDown(ERC20(pool).totalSupply());
+        }
+
+        return finalPrice_;
+    }
+
+    function _checkTokenIsIncluded(address _token) internal view {
+        // Check if `_token` is included in the pool.
+        if (tokenToData[_token].lastBlockNumber == 0) {
+            revert GeomeanOracleHookContract__TOKEN_NOT_INCLUDED_IN_THE_POOL();
+        }
+    }
 
     /**
      * @notice Converts a price from 18 decimals to the reference token's decimal precision.
@@ -335,7 +413,7 @@ abstract contract BaseGeomeanOracleHookContract is
      * @notice Calculate the accumulated price based on the previous observation, timestamp and price.
      * @param observation The observation containing timestamp and accumulatedPrice.
      * @param _timestamp The timestamp for which to calculate the accumulatedPrice.
-     * @return accumulatedPrice_ The calculated accumulated price.
+     * @return The calculated accumulated price.
      */
     function _calculateAccumulatedPrice(Observation storage observation, uint256 _timestamp)
         internal
@@ -354,7 +432,7 @@ abstract contract BaseGeomeanOracleHookContract is
         Observation[] storage tokenToObservation = tokenToObservations[_tokenAddress];
         Observation storage lastObservation = tokenToObservation[tokenToObservation.length - 1];
 
-        uint256 lastPrice_ = getLastPrice(_tokenAddress);
+        uint256 lastPrice_ = _getLastPrice(_tokenAddress);
 
         // Update observations with the last accumulatedPrice of a new block.
         // So we have maximum 1 observation per block.
@@ -417,7 +495,7 @@ abstract contract BaseGeomeanOracleHookContract is
      * @param observations The array of observations to search through.
      * @param _targetTimestamp The timestamp to search for.
      * @param _hintLow A hint for where to start the search (optimization). 0 if you don't have a hint.
-     * @return index_ The index of the observation closest to but not exceeding the target timestamp.
+     * @return The index of the observation closest to but not exceeding the target timestamp.
      */
     function _binarySearch(
         Observation[] storage observations,
@@ -464,18 +542,4 @@ abstract contract BaseGeomeanOracleHookContract is
 
         return low_;
     }
-
-    /**
-     * @notice Calculates the partial derivative of the invariant function with respect to a token.
-     * @dev This function is implemented by derived contracts based on their specific pool math.
-     * @param lastBalancesWad_ The array of token balances in WAD format.
-     * @param tokenIndex_ The index of the token in the pool.
-     * @param tokenWeight_ The normalized weight of the token in the pool. (only for WeightedPool)
-     * @return The partial derivative value used in price calculations.
-     */
-    function _calculatePartialDerivative(
-        uint256[] memory lastBalancesWad_,
-        uint256 tokenIndex_,
-        uint256 tokenWeight_
-    ) internal view virtual returns (uint256);
 }

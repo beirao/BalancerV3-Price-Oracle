@@ -22,27 +22,30 @@ contract WeightedPoolGeomeanOracleHookContract is BaseGeomeanOracleHookContract 
     {}
 
     /// @inheritdoc BaseGeomeanOracleHookContract
-    function getLastPrice(address _token) public view override returns (uint256) {
+    function _calculateTokenPrice(address _token, uint256[] memory _lastBalancesWad)
+        internal
+        view
+        override
+        returns (uint256)
+    {
         uint256[] memory indexToWeight_ = WeightedPool(pool).getNormalizedWeights();
         uint256 referenceTokenIndex_ = tokenToData[referenceToken].index;
         uint256 tokenIndex_ = tokenToData[_token].index;
-        (,,, uint256[] memory lastBalancesWad_) = IVault(vault).getPoolTokenInfo(pool);
 
-        uint256 numerator_ = _calculatePartialDerivative(
-            lastBalancesWad_, referenceTokenIndex_, indexToWeight_[referenceTokenIndex_]
-        );
-        uint256 denominator_ =
-            _calculatePartialDerivative(lastBalancesWad_, tokenIndex_, indexToWeight_[tokenIndex_]);
+        /////////////////////////////////////////////////////////
+        //                                            x        //
+        // x = token x price                        -----      //
+        // Wx = token x weight                        Wx       //
+        // y = token y price         Spot price = ---------    //
+        // Wy = token y weight                        y        //
+        //                                          -----      //
+        //                                            Wy       //
+        /////////////////////////////////////////////////////////
 
-        return _unscalePrice(numerator_.divWadDown(denominator_));
-    }
+        uint256 numerator_ =
+            _lastBalancesWad[referenceTokenIndex_].divWadDown(indexToWeight_[referenceTokenIndex_]);
+        uint256 denominator_ = _lastBalancesWad[tokenIndex_].divWadDown(indexToWeight_[tokenIndex_]);
 
-    /// @inheritdoc BaseGeomeanOracleHookContract
-    function _calculatePartialDerivative(
-        uint256[] memory lastBalancesWad_,
-        uint256 tokenIndex_,
-        uint256 tokenWeight_
-    ) internal view override returns (uint256) {
-        return lastBalancesWad_[tokenIndex_].divWadDown(tokenWeight_);
+        return numerator_.divWadDown(denominator_);
     }
 }

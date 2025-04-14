@@ -5,14 +5,14 @@ import "forge-std/console2.sol";
 
 import {TestTwapBal} from "../helper/TestTwapBal.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {WeightedPool} from "lib/balancer-v3-monorepo/pkg/pool-weighted/contracts/WeightedPool.sol";
-import {WeightedPoolGeomeanOracleHookContract} from
-    "../../contracts/WeightedPoolGeomeanOracleHookContract.sol";
+import {StablePool} from "lib/balancer-v3-monorepo/pkg/pool-stable/contracts/StablePool.sol";
+import {StablePoolGeomeanOracleHookContract} from
+    "../../contracts/StablePoolGeomeanOracleHookContract.sol";
 
-contract WeightedOracleMultiAssetsTest is TestTwapBal {
-    WeightedPool public pool;
+contract StablePoolOracleMultiAssetsTest is TestTwapBal {
+    StablePool public pool;
     IERC20[] public assets;
-    WeightedPoolGeomeanOracleHookContract public hookOracleContract;
+    StablePoolGeomeanOracleHookContract public hookOracleContract;
 
     function setUp() public override {
         super.setUp();
@@ -33,22 +33,14 @@ contract WeightedOracleMultiAssetsTest is TestTwapBal {
         }
 
         hookOracleContract =
-            new WeightedPoolGeomeanOracleHookContract(address(vaultV3), address(referenceToken));
+            new StablePoolGeomeanOracleHookContract(address(vaultV3), address(referenceToken));
 
-        uint256[] memory normalizedWeights = new uint256[](assets.length);
-        normalizedWeights[0] = 5e17;
-        normalizedWeights[1] = 25e16;
-        normalizedWeights[2] = 25e16;
-
-        pool = WeightedPool(
-            createWeightedPool(
-                assets, normalizedWeights, address(hookOracleContract), address(this)
-            )
-        );
+        pool =
+            StablePool(createStablePool(assets, address(hookOracleContract), 1000, address(this)));
 
         uint256[] memory amountsToAdd = new uint256[](assets.length);
         amountsToAdd[0] = 1_000_000e18; // usdc
-        amountsToAdd[1] = 100_000e18; // weth
+        amountsToAdd[1] = 1_000_000e18; // weth
         amountsToAdd[2] = 1_000_000e18; // usdt
 
         vm.prank(userA);
@@ -276,7 +268,15 @@ contract WeightedOracleMultiAssetsTest is TestTwapBal {
         _skip3 = bound(_skip3, 1, 1000);
         _performSwapsToGeneratePriceData(address(pool), hookOracleContract);
 
-        _swap(address(pool), hookOracleContract, usdt, usdc, 45e18, 6);
+        _swap(address(pool), hookOracleContract, usdt, usdc, 500_000e18, 6);
+        _swap(address(pool), hookOracleContract, usdt, usdc, 400_000e18, 6);
+        _swap(address(pool), hookOracleContract, usdc, usdt, 500_000e18, 6);
+        _swap(address(pool), hookOracleContract, usdc, usdt, 400_000e18, 6);
+
+        _swap(address(pool), hookOracleContract, usdt, usdc, 500_000e18, 6);
+        _swap(address(pool), hookOracleContract, usdt, usdc, 350_000e18, 6);
+        // _swap(address(pool), hookOracleContract, usdt, usdc, 500_000e18, 6);
+        // _swap(address(pool), hookOracleContract, usdt, usdc, 500_000e18, 6);
         _swap(address(pool), hookOracleContract, usdc, usdt, 40e18, 72);
         _swap(address(pool), hookOracleContract, weth, usdt, 0.3e18, 3);
         _swap(address(pool), hookOracleContract, usdt, weth, 1500e18, 12);
@@ -307,6 +307,16 @@ contract WeightedOracleMultiAssetsTest is TestTwapBal {
         _swap(address(pool), hookOracleContract, usdc, weth, 2000e18, 60);
         _swap(address(pool), hookOracleContract, usdc, usdt, 1e18, 12);
 
+        console2.log(
+            "getLastPrice(address(usdt)) ::: %18e", hookOracleContract.getLastPrice(address(usdt))
+        );
+        console2.log(
+            "getLastPrice(address(weth)) ::: %18e", hookOracleContract.getLastPrice(address(weth))
+        );
+        console2.log(
+            "getLastPrice(address(usdc)) ::: %18e", hookOracleContract.getLastPrice(address(usdc))
+        );
+
         _swap(address(pool), hookOracleContract, usdc, usdt, _amount1, _skip1);
         _swap(address(pool), hookOracleContract, usdt, weth, _amount2, _skip2);
         _swap(address(pool), hookOracleContract, weth, usdc, _amount3, _skip3);
@@ -314,7 +324,7 @@ contract WeightedOracleMultiAssetsTest is TestTwapBal {
 
     function _performSwapsToGeneratePriceData(
         address _pool,
-        WeightedPoolGeomeanOracleHookContract _hookOracleContract
+        StablePoolGeomeanOracleHookContract _hookOracleContract
     ) internal {
         _swap(_pool, _hookOracleContract, usdt, usdc, 10_000e18, 10 minutes);
         _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
@@ -323,7 +333,7 @@ contract WeightedOracleMultiAssetsTest is TestTwapBal {
         _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 5 minutes);
         _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 10 minutes);
         _swap(_pool, _hookOracleContract, usdt, usdc, 1e15, 2 minutes);
-        _swap(_pool, _hookOracleContract, usdt, usdc, 100000e18, 1 minutes);
+        _swap(_pool, _hookOracleContract, usdt, usdc, 100_000e18, 1 minutes);
         _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 5);
         _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 1);
         _swap(_pool, _hookOracleContract, usdt, usdc, 1e18, 1);
