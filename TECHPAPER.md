@@ -73,6 +73,25 @@ Where:
 
 This spot price is then used as the $price_i$ input for the geometric mean calculation.
 
+### BPT price calculation
+
+The Balancer Pool Token (BPT) price represents the value of one BPT share in terms of the reference token. It is calculated by summing the value of all underlying tokens in the pool and dividing by the total supply of BPT:
+
+$$\text{BPT Price} = \frac{\sum_{i} (b_i \cdot p_i)}{T}$$
+
+Where:
+- $b_i$ is the balance of token $i$ in the pool (in WAD)
+- $p_i$ is the price of token $i$ in terms of the reference token
+- $T$ is the total supply of BPT tokens
+
+This calculation is performed in the `_getLastPrice` function when the input token is the pool's BPT address. The function:
+1. Retrieves all pool tokens and their balances
+2. For each token, calculates its value in terms of the reference token
+3. Sums up all token values to get the total pool value
+4. Divides the total value by the BPT total supply to get the price per BPT
+
+The resulting BPT price is then used as input for the geometric mean calculation, just like any other token price in the pool.
+
 ## How does it work
 
 ### Observation

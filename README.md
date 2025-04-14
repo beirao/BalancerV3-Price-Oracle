@@ -2,7 +2,7 @@
 
 ## TODOs
 
--   Tests BPT oracle
+-   Tests BPT oracle/manipulation
 -   Tests tokens with different decimals
 -   Improve the doc
 

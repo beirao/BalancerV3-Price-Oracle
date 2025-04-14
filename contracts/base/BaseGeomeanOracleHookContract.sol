@@ -369,23 +369,20 @@ abstract contract BaseGeomeanOracleHookContract is
     function _getLastPrice(address _token) public view returns (uint256) {
         _checkTokenIsIncluded(_token);
 
-        uint256 finalPrice_;
         (IERC20[] memory tokens_,,, uint256[] memory lastBalancesWad_) =
             IVault(vault).getPoolTokenInfo(pool);
 
         if (_token != pool) {
-            finalPrice_ = _calculateTokenPrice(_token, lastBalancesWad_);
+            return _calculateTokenPrice(_token, lastBalancesWad_);
         } else {
-            uint256 sumPrice_;
+            uint256 totalValueInPool_;
             for (uint256 i; i < lastBalancesWad_.length; i++) {
-                sumPrice_ += lastBalancesWad_[i].mulWadDown(
+                totalValueInPool_ += lastBalancesWad_[i].mulWadDown(
                     _calculateTokenPrice(address(tokens_[i]), lastBalancesWad_)
                 );
             }
-            finalPrice_ = sumPrice_.divWadDown(ERC20(pool).totalSupply());
+            return totalValueInPool_.divWadDown(ERC20(pool).totalSupply());
         }
-
-        return finalPrice_;
     }
 
     function _checkTokenIsIncluded(address _token) internal view {
