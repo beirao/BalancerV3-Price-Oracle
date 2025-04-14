@@ -52,7 +52,7 @@ abstract contract BaseGeomeanOracleHookContract is
     uint256 public constant MAX_OBSERVATION_PERIOD = 30 days;
 
     /// @notice The maximum price change between two observations (WAD = 100%).
-    uint256 public constant MAX_INTER_OBSERVATION_PRICE_CHANGE = 1e17; // 10%
+    uint256 public constant MAX_INTER_OBSERVATION_PRICE_CHANGE = 5e16; // 5%
 
     /// @notice Mapping from token address to its metadata.
     mapping(address => TokenData) internal tokenToData;

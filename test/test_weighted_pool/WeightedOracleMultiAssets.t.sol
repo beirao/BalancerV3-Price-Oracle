@@ -162,14 +162,19 @@ contract WeightedOracleMultiAssetsTest is TestTwapBal {
             "getGeomeanPrice  ::: %18e",
             hookOracleContract.getGeomeanPrice(address(usdt), observationPeriod)
         );
+        uint256 balanceUstBefore = usdt.balanceOf(address(userC));
+        uint256 balanceUsdcBefore = usdc.balanceOf(address(userC));
+        console2.log("balance usdt ::: %18e", balanceUstBefore);
+        console2.log("balance usdc ::: %18e", balanceUsdcBefore);
 
         // FL manipulation
         for (uint256 i = 0; i < 30; i++) {
-            _swap(address(pool), hookOracleContract, usdt, usdc, 300_000e18, 0);
+            _swap(address(pool), hookOracleContract, usdc, usdt, 100_000e18, 0);
         }
 
         // 16 block manipulation
-        for (uint256 i = 0; i < 15; i++) {
+        uint256 blockManipulationNumber = 16;
+        for (uint256 i = 0; i < blockManipulationNumber; i++) {
             // console2.log("lastPrice  1      ::: %18e", hookOracleContract.getLastPrice(address(usdt)));
             _updateTimestamp(12);
             _swap(address(pool), hookOracleContract, usdt, usdc, 1e17, 0);
@@ -183,15 +188,69 @@ contract WeightedOracleMultiAssetsTest is TestTwapBal {
         );
 
         // Back to original price
-        for (uint256 i = 0; i < 63; i++) {
-            _swap(address(pool), hookOracleContract, usdc, usdt, 10_000e18, 0);
+        for (uint256 i = 0; i < 106; i++) {
+            _swap(address(pool), hookOracleContract, usdt, usdc, 10_000e18, 0);
         }
+        _swap(address(pool), hookOracleContract, usdt, usdc, 1000e18, 0);
+        _swap(address(pool), hookOracleContract, usdt, usdc, 1000e18, 0);
 
         // Update price back to normal
-        for (uint256 i = 0; i < 17; i++) {
+        for (uint256 i = 0; i < blockManipulationNumber + 10; i++) {
             // console2.log("lastPrice  2      ::: %18e", hookOracleContract.getLastPrice(address(usdt)));
             _updateTimestamp(12);
-            _swap(address(pool), hookOracleContract, usdc, usdt, 1e17, 0);
+            _swap(address(pool), hookOracleContract, usdt, usdc, 1e15, 0);
+        }
+        _swap(address(pool), hookOracleContract, usdc, usdt, 2597e18, 0);
+
+        console2.log("---");
+        console2.log("lastPrice        ::: %18e", hookOracleContract.getLastPrice(address(usdt)));
+        console2.log(
+            "getGeomeanPrice  ::: %18e",
+            hookOracleContract.getGeomeanPrice(address(usdt), observationPeriod)
+        );
+        uint256 balanceUstAfter = usdt.balanceOf(address(userC));
+        uint256 balanceUsdcAfter = usdc.balanceOf(address(userC));
+        console2.log("balance usdt ::: %18e", int256(balanceUstAfter) - int256(balanceUstBefore));
+        console2.log("balance usdc ::: %18e", int256(balanceUsdcAfter) - int256(balanceUsdcBefore));
+
+        assertApproxEqRel(
+            lastGeomeanPrice,
+            hookOracleContract.getGeomeanPrice(address(usdt), observationPeriod),
+            0.04e18
+        );
+    }
+
+    function test_priceManipulation5Blocks() public {
+        _performSwapsToGeneratePriceData(address(pool), hookOracleContract);
+
+        _swap(address(pool), hookOracleContract, usdc, usdt, 1e18, 1 hours);
+
+        uint256 observationPeriod = 1 hours;
+        uint256 lastGeomeanPrice =
+            hookOracleContract.getGeomeanPrice(address(usdt), observationPeriod);
+
+        console2.log("---");
+        console2.log("lastPrice        ::: %18e", hookOracleContract.getLastPrice(address(usdt)));
+        console2.log(
+            "getGeomeanPrice  ::: %18e",
+            hookOracleContract.getGeomeanPrice(address(usdt), observationPeriod)
+        );
+        uint256 balanceUstBefore = usdt.balanceOf(address(userC));
+        uint256 balanceUsdcBefore = usdc.balanceOf(address(userC));
+        console2.log("balance usdt ::: %18e", balanceUstBefore);
+        console2.log("balance usdc ::: %18e", balanceUsdcBefore);
+
+        // FL manipulation
+        for (uint256 i = 0; i < 30; i++) {
+            _swap(address(pool), hookOracleContract, usdc, usdt, 100_000e18, 0);
+        }
+
+        // 16 block manipulation
+        uint256 blockManipulationNumber = 5;
+        for (uint256 i = 0; i < blockManipulationNumber; i++) {
+            // console2.log("lastPrice  1      ::: %18e", hookOracleContract.getLastPrice(address(usdt)));
+            _updateTimestamp(12);
+            _swap(address(pool), hookOracleContract, usdt, usdc, 1e17, 0);
         }
 
         console2.log("---");
@@ -201,11 +260,37 @@ contract WeightedOracleMultiAssetsTest is TestTwapBal {
             hookOracleContract.getGeomeanPrice(address(usdt), observationPeriod)
         );
 
+        // Back to original price
+        for (uint256 i = 0; i < 106; i++) {
+            _swap(address(pool), hookOracleContract, usdt, usdc, 10_000e18, 0);
+        }
+        _swap(address(pool), hookOracleContract, usdt, usdc, 1000e18, 0);
+        _swap(address(pool), hookOracleContract, usdt, usdc, 1000e18, 0);
+
+        // Update price back to normal
+        for (uint256 i = 0; i < blockManipulationNumber + 10; i++) {
+            // console2.log("lastPrice  2      ::: %18e", hookOracleContract.getLastPrice(address(usdt)));
+            _updateTimestamp(12);
+            _swap(address(pool), hookOracleContract, usdt, usdc, 1e15, 0);
+        }
+        _swap(address(pool), hookOracleContract, usdc, usdt, 2597e18, 0);
+
+        console2.log("---");
+        console2.log("lastPrice        ::: %18e", hookOracleContract.getLastPrice(address(usdt)));
+        console2.log(
+            "getGeomeanPrice  ::: %18e",
+            hookOracleContract.getGeomeanPrice(address(usdt), observationPeriod)
+        );
+        uint256 balanceUstAfter = usdt.balanceOf(address(userC));
+        uint256 balanceUsdcAfter = usdc.balanceOf(address(userC));
+        console2.log("balance usdt ::: %18e", int256(balanceUstAfter) - int256(balanceUstBefore));
+        console2.log("balance usdc ::: %18e", int256(balanceUsdcAfter) - int256(balanceUsdcBefore));
+
         assertApproxEqRel(
             lastGeomeanPrice,
             hookOracleContract.getGeomeanPrice(address(usdt), observationPeriod),
-            0.09e18
-        ); // 16 blocks manipulation result in less than 9% price change.
+            0.01e18
+        );
     }
 
     function test_priceAccuracyWeth() public {

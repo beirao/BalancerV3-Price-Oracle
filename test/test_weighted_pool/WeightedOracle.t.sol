@@ -94,7 +94,7 @@ contract WeightedOracleTest is TestTwapBal {
             _swap(address(pool), hookOracleContract, usdc, usdt, 10_000e18, 0); // n = 1
         }
 
-        for (uint256 i = 0; i < 1 hours / 12; i++) {
+        for (uint256 i = 0; i < 1 hours / 10; i++) {
             _swap(address(pool), hookOracleContract, usdt, usdc, 1e17, 12); // n = 1
         }
 

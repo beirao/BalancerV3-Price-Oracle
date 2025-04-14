@@ -12,7 +12,8 @@ The Balancer V3 Geomean Oracle is a robust price oracle solution designed specif
 - **Manipulation Resistance**:
   - Inherently protected against single-block manipulation via geometric mean calculation.
   - **Manipulation Safe Guard**: Implements a maximum price change limit of 10% per block. This relies on the assumption that larger changes are likely manipulation or highly inefficient swaps.
-  - **Worst-Case Scenario**: Even if an attacker controls 16 consecutive blocks on Ethereum mainnet (an extremely unlikely event), the maximum price deviation is calculated to be 8.5% over a 1-hour observation period.
+  - **Common manipulation scenario**: With control over 6 consecutive blocks on Ethereum mainnet, an attacker can only achieve a maximum price deviation of 0.46% over a 1-hour observation period, significantly limiting manipulation potential.
+  - **Worst-Case Scenario**: Even if an attacker controls 16 consecutive blocks on Ethereum mainnet (an extremely unlikely event), the maximum price deviation is calculated to be 3.10% over a 1-hour observation period.
 - **Flexibility**:
   - Fully customizable observation period (up to 30 days).
   - Ability to create multiple Chainlink adaptors from a single oracle hook contract.
